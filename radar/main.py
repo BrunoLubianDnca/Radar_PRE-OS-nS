@@ -17,7 +17,8 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from .core import BR, Offer, discovery, parse_detail, qualifies, select_alerts
+from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qualifies, select_alerts
+from .popular import popularity_evidence, rank_offers
 from .email_template import format_email, format_test_email
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,14 +88,29 @@ def main(argv: list[str] | None = None) -> int:
     session = requests.Session()
     sources = settings.get("source_urls") or [settings["source_url"]]
     urls = []
+    max_pages = max(1, min(int(settings.get("max_listing_pages", 1)), 5))
     for source in sources:
-        html_listing = fetch(session, source)
-        discovered = discovery(html_listing, source, int(settings["max_source_age_hours"]))
-        LOG.info("Fonte %s: %d candidatos", source, len(discovered))
-        for url in discovered:
-            if url not in urls:
-                urls.append(url)
-    # Usa duas vitrines públicas (não o catálogo inteiro).
+        # Páginas subsequentes só são visitadas se aparecerem como links href
+        # no HTML. Botões que dependem de JS não autorizam chutar URLs.
+        pending = [source]
+        visited: set[str] = set()
+        while pending and len(visited) < max_pages:
+            page_url = pending.pop(0)
+            if page_url in visited:
+                continue
+            if visited:
+                time.sleep(float(settings["request_delay_seconds"]))
+            html_listing = fetch(session, page_url)
+            discovered = discovery(html_listing, page_url, int(settings["max_source_age_hours"]))
+            visited.add(page_url)
+            LOG.info("Vitrine %s: %d candidatos", page_url, len(discovered))
+            for url in discovered:
+                if url not in urls:
+                    urls.append(url)
+            for linked in discover_listing_pages(html_listing, source, max_pages):
+                if linked not in visited and linked not in pending:
+                    pending.append(linked)
+        LOG.info("Cobertura %s: %d pagina(s) HTML verificadas", source, len(visited))
     LOG.info("Candidatos únicos nas vitrines: %d", len(urls))
     offers: list[Offer] = []
     failed = 0
@@ -113,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
             parsed_count += 1
             if qualifies(offer, settings):
                 offers.append(offer)
-                LOG.info("Elegível: %s | %s | -%d%%", offer.title, money_brl(offer.price), offer.discount)
+                relevance, evidence = popularity_evidence(offer.title, offer.critic, offer.player_positive, offer.player_reviews)
+                LOG.info("Elegível: %s | %s | -%d%% | relevância editorial %d/100 (%s)", offer.title, money_brl(offer.price), offer.discount, relevance, evidence)
             else:
                 LOG.info("Fora dos filtros: %s | %s | -%d%% | Crítica %d | Jogadores %d%% (%d)", offer.title, money_brl(offer.price), offer.discount, offer.critic, offer.player_positive, offer.player_reviews)
         except (requests.RequestException, RuntimeError, ValueError) as exc:
@@ -132,7 +149,10 @@ def main(argv: list[str] | None = None) -> int:
     if len(urls) >= 10 and parsed_count < len(urls) // 3:
         raise RuntimeError("Cobertura do parser insuficiente; evitar histórico parcial")
     if args.preview_email:
-        email_alert(offers, int(settings["max_games_per_email"]), preview=True)
+        # Escolhe primeiro as ofertas mais relevantes; o template preserva a
+        # apresentação visual e ordena por desconto dentro dessa seleção.
+        selected = rank_offers(offers)[:int(settings["max_games_per_email"])]
+        email_alert(selected, int(settings["max_games_per_email"]), preview=True)
         LOG.info("Prévia de ofertas enviada, histórico não alterado")
         return 0
     alerts, new_state = select_alerts(offers, state, bootstrap=not args.send_initial)
@@ -143,7 +163,8 @@ def main(argv: list[str] | None = None) -> int:
         print("DRY RUN: nenhum e-mail enviado; estado não modificado")
         return 0
     if alerts:
-        email_alert(alerts, int(settings["max_games_per_email"]))
+        selected = rank_offers(alerts)[:int(settings["max_games_per_email"])]
+        email_alert(selected, int(settings["max_games_per_email"]))
         LOG.info("E-mail aceito pelo SMTP")
     # Só atualiza depois do SMTP concluir, permitindo tentativa posterior se falhar.
     state_file.write_text(json.dumps(new_state, ensure_ascii=False, indent=2, sort_keys=True)
