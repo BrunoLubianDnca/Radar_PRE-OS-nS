@@ -159,3 +159,52 @@ def test_famous_switch_games_without_steam_review_metrics():
     negative = Offer(**{**offer.__dict__,
                         "player_reviews": 2000, "player_positive": 40})
     assert not qualifies(negative, dict(SETTINGS, popular_only=True))
+
+
+def test_pagination_only_follows_explicit_safe_links():
+    from radar.core import discover_listing_pages
+    base = "https://valeojogo.com.br/promocoes/switch/"
+    sample = (
+        '<a href="?page=2">2</a>'
+        '<a href="/promocoes/switch/?page=3">3</a>'
+        '<a href="https://evil.example/promocoes/switch/?page=2">evitar</a>'
+        '<a href="/promocoes/pc/?page=2">plataforma errada</a>'
+        '<a href="?page=999999">fora do limite</a>'
+        '<a href="?page=-1">invalido</a>'
+        '<button>4</button>'
+    )
+    assert discover_listing_pages(sample, base, 3) == [
+        base + "?page=2", base + "?page=3"
+    ]
+    assert discover_listing_pages(sample, base, 1) == []
+    assert discover_listing_pages('<button>2</button>', base, 3) == []
+
+
+def test_popularity_ranking_is_explainable_not_sales_data():
+    from radar.popular import popularity_evidence, rank_offers
+    offer = parse_detail(DETAIL, URL)
+    assert offer is not None
+    popular = Offer(**{**offer.__dict__, "title": "Terraria",
+                       "player_positive": 97, "player_reviews": 72600})
+    missing = Offer(**{**offer.__dict__, "title": "Terraria",
+                       "player_positive": 0, "player_reviews": 0})
+    outside = Offer(**{**offer.__dict__, "title": "Example Unknown Game",
+                       "player_reviews": 100})
+    ranked = rank_offers([outside, missing, popular])
+    assert ranked[0] == popular
+    assert popularity_evidence(popular.title, popular.critic,
+                               popular.player_positive, popular.player_reviews)[0] > (
+                                   popularity_evidence(missing.title, missing.critic,
+                                                       missing.player_positive, missing.player_reviews)[0])
+    _, evidence = popularity_evidence(missing.title, missing.critic, 0, 0)
+    assert "não informadas" in evidence
+    assert "vendas" not in evidence.lower()
+
+
+def test_unverifiable_eshop_purchase_is_not_fabricated():
+    # Algumas fichas entregam somente um resumo (página carregada em JS).
+    # Sem a seção e o link oficial, não há como provar o preço digital.
+    skeleton = """<html><h1>Borderlands Collection</h1>
+    <p>Crítica 84/100. Nintendo eShop (Switch) R$ 49,98 (-75%).</p>
+    <p>Carregando o histórico de preço, as lojas e a comunidade...</p></html>"""
+    assert parse_detail(skeleton, "https://valeojogo.com.br/jogo/borderlands/") is None
