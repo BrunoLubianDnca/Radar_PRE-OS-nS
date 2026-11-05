@@ -10,6 +10,11 @@ on:
         required: false
         type: boolean
         default: false
+      test_email:
+        description: 'Enviar um e-mail de teste, sem consultar jogos nem alterar histórico?'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -45,8 +50,11 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           SEND_INITIAL: ${{ inputs.send_initial }}
+          TEST_EMAIL: ${{ inputs.test_email }}
         run: |
-          if [ "$SEND_INITIAL" = "true" ]; then
+          if [ "$TEST_EMAIL" = "true" ]; then
+            python -m radar.main --test-email
+          elif [ "$SEND_INITIAL" = "true" ]; then
             python -m radar.main --send-initial
           else
             python -m radar.main
