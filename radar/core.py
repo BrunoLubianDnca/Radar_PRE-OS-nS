@@ -183,7 +183,8 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
 
 
 def qualifies(o: Offer, settings: dict) -> bool:
-    return (o.price <= Decimal(str(settings["max_price_brl"]))
+    return (o.price >= Decimal(str(settings.get("min_price_brl", 0)))
+            and o.price <= Decimal(str(settings["max_price_brl"]))
             and o.discount >= settings["min_discount_percent"]
             and o.critic >= settings["min_critic_score"]
             and o.player_positive >= settings["min_player_positive_percent"]
