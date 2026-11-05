@@ -1,1 +1,181 @@
-{"initialized":false,"active":{}}
+{
+  "active": {
+    "https://valeojogo.com.br/jogo/bloodstained-ritual-of-the-night/": {
+      "critic": 82,
+      "discount": 75,
+      "old_price": "99.00",
+      "page_url": "https://valeojogo.com.br/jogo/bloodstained-ritual-of-the-night/",
+      "player_positive": 97,
+      "player_reviews": 2700,
+      "price": "24.75",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/bloodstained-ritual-of-the-night-switch/",
+      "title": "Bloodstained: Ritual of the Night"
+    },
+    "https://valeojogo.com.br/jogo/children-of-morta/": {
+      "critic": 83,
+      "discount": 85,
+      "old_price": "110.00",
+      "page_url": "https://valeojogo.com.br/jogo/children-of-morta/",
+      "player_positive": 97,
+      "player_reviews": 2200,
+      "price": "16.50",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/children-of-morta-switch/",
+      "title": "Children of Morta"
+    },
+    "https://valeojogo.com.br/jogo/darkest-dungeon/": {
+      "critic": 83,
+      "discount": 74,
+      "old_price": "45.99",
+      "page_url": "https://valeojogo.com.br/jogo/darkest-dungeon/",
+      "player_positive": 96,
+      "player_reviews": 5800,
+      "price": "11.99",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/darkest-dungeon-switch/",
+      "title": "Darkest Dungeon®"
+    },
+    "https://valeojogo.com.br/jogo/dicey-dungeons/": {
+      "critic": 90,
+      "discount": 78,
+      "old_price": "54.99",
+      "page_url": "https://valeojogo.com.br/jogo/dicey-dungeons/",
+      "player_positive": 88,
+      "player_reviews": 10500,
+      "price": "11.99",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/dicey-dungeons-switch/",
+      "title": "Dicey Dungeons"
+    },
+    "https://valeojogo.com.br/jogo/disco-elysium-the-final-cut/": {
+      "critic": 89,
+      "discount": 75,
+      "old_price": "203.95",
+      "page_url": "https://valeojogo.com.br/jogo/disco-elysium-the-final-cut/",
+      "player_positive": 96,
+      "player_reviews": 3900,
+      "price": "50.98",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/disco-elysium-the-final-cut-switch/",
+      "title": "Disco Elysium - The Final Cut"
+    },
+    "https://valeojogo.com.br/jogo/enter-the-gungeon/": {
+      "critic": 82,
+      "discount": 74,
+      "old_price": "46.99",
+      "page_url": "https://valeojogo.com.br/jogo/enter-the-gungeon/",
+      "player_positive": 98,
+      "player_reviews": 3400,
+      "price": "11.99",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/enter-the-gungeon-switch/",
+      "title": "Enter the Gungeon"
+    },
+    "https://valeojogo.com.br/jogo/final-fantasy-xii-the-zodiac-age/": {
+      "critic": 88,
+      "discount": 70,
+      "old_price": "229.90",
+      "page_url": "https://valeojogo.com.br/jogo/final-fantasy-xii-the-zodiac-age/",
+      "player_positive": 97,
+      "player_reviews": 1100,
+      "price": "68.97",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/final-fantasy-xii-the-zodiac-age-switch/",
+      "title": "FINAL FANTASY XII THE ZODIAC AGE"
+    },
+    "https://valeojogo.com.br/jogo/loop-hero/": {
+      "critic": 85,
+      "discount": 80,
+      "old_price": "76.45",
+      "page_url": "https://valeojogo.com.br/jogo/loop-hero/",
+      "player_positive": 97,
+      "player_reviews": 1300,
+      "price": "15.29",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/loop-hero-switch/",
+      "title": "Loop Hero"
+    },
+    "https://valeojogo.com.br/jogo/moonlighter/": {
+      "critic": 82,
+      "discount": 85,
+      "old_price": "110.00",
+      "page_url": "https://valeojogo.com.br/jogo/moonlighter/",
+      "player_positive": 95,
+      "player_reviews": 2300,
+      "price": "16.50",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/moonlighter-switch/",
+      "title": "Moonlighter"
+    },
+    "https://valeojogo.com.br/jogo/owlboy/": {
+      "critic": 89,
+      "discount": 75,
+      "old_price": "47.49",
+      "page_url": "https://valeojogo.com.br/jogo/owlboy/",
+      "player_positive": 85,
+      "player_reviews": 3700,
+      "price": "11.99",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/owlboy-switch/",
+      "title": "Owlboy"
+    },
+    "https://valeojogo.com.br/jogo/return-to-monkey-island/": {
+      "critic": 92,
+      "discount": 66,
+      "old_price": "73.99",
+      "page_url": "https://valeojogo.com.br/jogo/return-to-monkey-island/",
+      "player_positive": 91,
+      "player_reviews": 8400,
+      "price": "25.15",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/return-to-monkey-island-switch/",
+      "title": "Return to Monkey Island"
+    },
+    "https://valeojogo.com.br/jogo/risk-of-rain-2/": {
+      "critic": 87,
+      "discount": 75,
+      "old_price": "89.99",
+      "page_url": "https://valeojogo.com.br/jogo/risk-of-rain-2/",
+      "player_positive": 97,
+      "player_reviews": 7900,
+      "price": "22.49",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/risk-of-rain-2-switch/",
+      "title": "Risk of Rain 2"
+    },
+    "https://valeojogo.com.br/jogo/rune-factory-4-special/": {
+      "critic": 87,
+      "discount": 70,
+      "old_price": "119.99",
+      "page_url": "https://valeojogo.com.br/jogo/rune-factory-4-special/",
+      "player_positive": 88,
+      "player_reviews": 2100,
+      "price": "35.99",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/rune-factory-4-special-switch/",
+      "title": "Rune Factory 4 Special"
+    },
+    "https://valeojogo.com.br/jogo/sid-meiers-civilization-vi/": {
+      "critic": 87,
+      "discount": 80,
+      "old_price": "149.50",
+      "page_url": "https://valeojogo.com.br/jogo/sid-meiers-civilization-vi/",
+      "player_positive": 93,
+      "player_reviews": 6300,
+      "price": "29.90",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/sid-meiers-civilization-vi-switch/",
+      "title": "Sid Meier’s Civilization® VI"
+    },
+    "https://valeojogo.com.br/jogo/terraria/": {
+      "critic": 81,
+      "discount": 50,
+      "old_price": "149.00",
+      "page_url": "https://valeojogo.com.br/jogo/terraria/",
+      "player_positive": 97,
+      "player_reviews": 72600,
+      "price": "74.50",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/terraria-switch/",
+      "title": "Terraria"
+    },
+    "https://valeojogo.com.br/jogo/the-messenger/": {
+      "critic": 87,
+      "discount": 80,
+      "old_price": "73.96",
+      "page_url": "https://valeojogo.com.br/jogo/the-messenger/",
+      "player_positive": 98,
+      "player_reviews": 1400,
+      "price": "14.79",
+      "shop_url": "https://www.nintendo.com/pt-br/store/products/the-messenger-switch/",
+      "title": "The Messenger"
+    }
+  },
+  "initialized": true
+}
