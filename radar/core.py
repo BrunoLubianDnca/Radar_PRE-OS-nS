@@ -6,6 +6,7 @@ nunca substituída por um preço adivinhado.
 from __future__ import annotations
 
 import re
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -97,48 +98,85 @@ def _parse_reviews(text: str) -> tuple[int, int] | None:
 
 
 def parse_detail(html: str, page_url: str) -> Offer | None:
+    """Extrai somente oferta DIGITAL da Nintendo; rejeita dados ambíguos.
+
+    Aceita variações de espaços, hífens, quebras e ordem dos preços.
+    Nunca usa preços de PC, Xbox, PlayStation ou mídia física.
+    """
+    log = logging.getLogger("radar-switch.parser")
     soup = BeautifulSoup(html, "html.parser")
-    title_tag = soup.find("h1")
-    if not title_tag:
+    heading = soup.find("h1")
+    if heading is None:
+        log.warning("Sem titulo h1: %s", page_url)
         return None
-    title = title_tag.get_text(" ", strip=True)
+    title = heading.get_text(" ", strip=True)
     text = soup.get_text(" ", strip=True)
-    # Limitar a seção de ofertas: exclui FAQ e histórico que contêm preços repetidos.
     start = text.find("Onde comprar")
     end = text.find("Histórico de preço", start)
-    if start == -1 or end == -1:
+    if start < 0:
+        log.warning("Secao Onde comprar ausente: %s", page_url)
         return None
-    section = text[start:end]
-    match = DEAL_RE.search(section)
-    if not match:
+    section = text[start:end] if end >= 0 else text[start:start + 4000]
+
+    # Isolar a entrada da eShop, mesmo com outras plataformas na página.
+    entry = re.search(r"Switch\\s+digital\\s+Nintendo\\s+eShop", section, re.I)
+    if entry is None:
+        log.info("Sem oferta Switch digital eShop: %s", page_url)
         return None
-    old_price, discount, price = money(match.group(1)), int(match.group(2)), money(match.group(3))
-    if not (0 < price < old_price and 1 <= discount <= 99):
+    snippet = section[entry.end(): entry.end() + 280]
+    # Os primeiros preços da entrada devem estar na sequência:
+    # preço antigo, desconto, preço atual.
+    deal = re.search(
+        r"R\\$\\s*([\\d.]+,\\d{2})\\s*[−–-]\\s*(\\d{1,3})\\s*%\\s*"
+        r"R\\$\\s*([\\d.]+,\\d{2})",
+        snippet, re.I
+    )
+    if not deal:
+        log.warning("Preco/desconto eShop nao reconhecido: %s | %s",
+                    page_url, snippet[:130])
         return None
-    # Evita dados incoerentes, sem exigir coincidência exata devido ao arredondamento.
+    old_price, discount, price = (
+        money(deal.group(1)), int(deal.group(2)), money(deal.group(3))
+    )
+    if not (Decimal("0") < price < old_price and 1 <= discount <= 99):
+        log.warning("Valores eShop invalidos: %s", page_url)
+        return None
     calculated = (Decimal(1) - price / old_price) * 100
     if abs(calculated - Decimal(discount)) > Decimal("1.5"):
+        log.warning("Desconto nao confere: %s", page_url)
         return None
-    critic_match = (re.search(r"(\d{1,3})\s+Crítica\b", text[:start], re.I)
-                    or re.search(r"Crítica\s+(\d{1,3})\b", text[:start], re.I))
-    reviews = _parse_reviews(text[:start])
-    if not critic_match or reviews is None:
+
+    before = text[:start]
+    critic_match = (
+        re.search(r"(\\d{1,3})\\s+Crítica\\b", before, re.I)
+        or re.search(r"Crítica\\s+(\\d{1,3})\\b", before, re.I)
+    )
+    if critic_match is None:
+        log.info("Sem nota de critica: %s", page_url)
+        return None
+    reviews = _parse_reviews(before)
+    if reviews is None:
+        log.info("Sem nota/quantidade de avaliacoes de jogadores: %s", page_url)
         return None
     critic = int(critic_match.group(1))
     positive, count = reviews
-    if not all(0 <= x <= 100 for x in (critic, positive)):
+    if not all(0 <= score <= 100 for score in (critic, positive)):
         return None
-    # Encontra o link da Nintendo dentro do contexto da oferta de Switch digital.
+
+    # A página pode trazer outros links para Nintendo; exigir contexto da oferta.
     shop_url = ""
-    for a in soup.select('a[href]'):
-        if "Ver na eShop" not in a.get_text(" ", strip=True):
+    for anchor in soup.select("a[href]"):
+        if not re.search(r"Ver na eShop", anchor.get_text(" ", strip=True), re.I):
             continue
-        candidate = a["href"]
-        domain = (urlparse(candidate).hostname or "").lower()
-        if domain == "nintendo.com" or domain.endswith(".nintendo.com"):
+        candidate = anchor.get("href", "")
+        parsed = urlparse(candidate)
+        domain = (parsed.hostname or "").lower()
+        if (parsed.scheme == "https" and
+            (domain == "nintendo.com" or domain.endswith(".nintendo.com"))):
             shop_url = candidate
             break
     if not shop_url:
+        log.warning("Link oficial Nintendo ausente: %s", page_url)
         return None
     return Offer(title, page_url, shop_url, price, old_price, discount,
                  critic, positive, count)
