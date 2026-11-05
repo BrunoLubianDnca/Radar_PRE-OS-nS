@@ -208,3 +208,20 @@ def test_unverifiable_eshop_purchase_is_not_fabricated():
     <p>Crítica 84/100. Nintendo eShop (Switch) R$ 49,98 (-75%).</p>
     <p>Carregando o histórico de preço, as lojas e a comunidade...</p></html>"""
     assert parse_detail(skeleton, "https://valeojogo.com.br/jogo/borderlands/") is None
+
+
+def test_explicit_alternate_price_order_still_verifies_discount_and_store():
+    original = '<span>R$ 73,96</span> -80%\n<span>R$ 14,79</span>'
+    assert original in DETAIL
+    alternate = DETAIL.replace(
+        original, '-80% <span>R$ 14,79</span> de <span>R$ 73,96</span>'
+    )
+    parsed = parse_detail(alternate, URL)
+    assert parsed is not None
+    assert parsed.price == Decimal("14.79")
+    assert parsed.old_price == Decimal("73.96")
+    assert parsed.discount == 80
+    # Mesmo formato, mas desconto mentiroso: rejeitar em vez de alertar.
+    assert parse_detail(alternate.replace("-80%", "-95%"), URL) is None
+    # Link fora da Nintendo não é compra digital verificada.
+    assert parse_detail(alternate.replace("www.nintendo.com", "fake.example"), URL) is None
