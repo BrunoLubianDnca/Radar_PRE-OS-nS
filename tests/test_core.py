@@ -115,11 +115,11 @@ def test_email_html_with_cover_buttons_and_plain_text():
     assert "The Messenger" in plain
     assert "PRÉVIA" in plain
     assert 'alt="Capa de The Messenger"' in rich
-    assert "Ver na Nintendo eShop" in rich
+    assert "Ver oferta na eShop" in rich
     assert "R$ 14,79" in rich
-    assert "-80% OFF" in rich
+    assert "80% OFF" in rich
     no_cover = Offer(**{**offer.__dict__, "image_url": ""})
-    assert "Nintendo Switch</div>" in format_email([no_cover], 10)[1]
+    assert "Nintendo<br>Switch" in format_email([no_cover], 10)[1]
     test_plain, test_html = format_test_email()
     assert "não altera o histórico" in test_plain
     assert "<html" in test_html
