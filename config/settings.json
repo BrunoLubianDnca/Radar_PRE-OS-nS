@@ -8,7 +8,10 @@
   "max_listing_pages": 1,
   "max_source_age_hours": 48,
   "request_delay_seconds": 1.5,
-  "source_url": "https://valeojogo.com.br/promocoes/switch/",
   "max_discount_percent": 90,
-  "popular_only": true
+  "popular_only": true,
+  "source_urls": [
+    "https://valeojogo.com.br/promocoes/switch/",
+    "https://valeojogo.com.br/promocoes/jogos-baratos-switch/"
+  ]
 }
