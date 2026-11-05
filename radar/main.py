@@ -116,25 +116,39 @@ def main(argv: list[str] | None = None) -> int:
     LOG.info("Candidatos na vitrine: %d", len(urls))
     offers: list[Offer] = []
     failed = 0
+    parsed_count = 0
+    discarded_count = 0
     for i, url in enumerate(urls, 1):
+        LOG.info("Analisando %d/%d: %s", i, len(urls), url)
         if i > 1:
             time.sleep(float(settings["request_delay_seconds"]))
         try:
             game_html = fetch(session, url)
             offer = parse_detail(game_html, url)
-            if offer is not None and qualifies(offer, settings):
+            if offer is None:
+                discarded_count += 1
+                continue
+            parsed_count += 1
+            if qualifies(offer, settings):
                 offers.append(offer)
+                LOG.info("Elegível: %s | %s | -%d%%", offer.title, money_brl(offer.price), offer.discount)
+            else:
+                LOG.info("Fora dos filtros: %s | %s | -%d%% | Crítica %d | Jogadores %d%% (%d)", offer.title, money_brl(offer.price), offer.discount, offer.critic, offer.player_positive, offer.player_reviews)
         except (requests.RequestException, RuntimeError, ValueError) as exc:
             failed += 1
             LOG.warning("Falha na página %s: %s", url, exc)
     # Não grave o estado se parte da vitrine estiver indisponível: evita falsos
     # avisos de 'promoção nova' quando a página se recuperar.
+    LOG.info("Resumo: candidatos=%d, interpretados=%d, sem dados=%d, elegíveis=%d, erros HTTP=%d", len(urls), parsed_count, discarded_count, len(offers), failed)
     if failed:
         raise RuntimeError(f"Falharam {failed}/{len(urls)} páginas. Estado preservado.")
-    if not offers and len(urls) >= 5:
-        # Pode ser um dia sem ofertas elegíveis, mas também alteração de layout.
-        # Para não apagar o histórico, falhar fechado é mais seguro.
-        raise RuntimeError("Nenhum jogo elegível detectado; verificar parser antes de limpar histórico")
+    if parsed_count == 0:
+        raise RuntimeError("Nenhuma oferta digital reconhecida: verificar estrutura do site; estado preservado")
+    if not offers:
+        LOG.info("Nenhum jogo atingiu todos os filtros. Histórico preservado, sem e-mail.")
+        return 0
+    if len(urls) >= 10 and parsed_count < len(urls) // 3:
+        raise RuntimeError("Cobertura do parser insuficiente; evitar histórico parcial")
     alerts, new_state = select_alerts(offers, state, bootstrap=not args.send_initial)
     LOG.info("Elegíveis: %d | Alertas: %d", len(offers), len(alerts))
     if args.dry_run:
@@ -156,5 +170,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        LOG.error("Monitoramento falhou, estado não atualizado: %s", e)
+        LOG.exception("Monitoramento falhou, estado não atualizado")
         sys.exit(1)
