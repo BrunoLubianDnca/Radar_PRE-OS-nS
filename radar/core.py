@@ -81,6 +81,39 @@ def discovery(html: str, base: str, max_age_hours: int = 48,
     return result
 
 
+
+def discover_listing_pages(html: str, base: str, max_pages: int) -> list[str]:
+    """Segue somente links HTML explícitos de paginação da MESMA vitrine.
+
+    Botões JavaScript sem href não são URLs verificadas e não são adivinhados.
+    Consulta limitada pelo max_pages para evitar loops ou varredura agressiva.
+    """
+    from urllib.parse import parse_qs, urlencode, urlunparse
+    if max_pages <= 1:
+        return []
+    base_url = urlparse(base)
+    result: list[str] = []
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.select("a[href]"):
+        target = urlparse(urljoin(base, a.get("href", "")))
+        if (target.scheme != "https" or target.hostname != "valeojogo.com.br"
+                or target.path.rstrip("/") != base_url.path.rstrip("/")):
+            continue
+        params = parse_qs(target.query, keep_blank_values=False)
+        if set(params) != {"page"} or len(params["page"]) != 1:
+            continue
+        raw = params["page"][0]
+        if not raw.isascii() or not raw.isdigit():
+            continue
+        page_number = int(raw)
+        if not 2 <= page_number <= max_pages:
+            continue
+        candidate = urlunparse(("https", "valeojogo.com.br",
+                                base_url.path, "", urlencode({"page": page_number}), ""))
+        if candidate not in result:
+            result.append(candidate)
+    return sorted(result, key=lambda u: int(parse_qs(urlparse(u).query)["page"][0]))
+
 def _parse_reviews(text: str) -> tuple[int, int] | None:
     # Captura apenas o bloco 'Jogadores' antes de 'Onde comprar'.
     m = re.search(r"Jogadores\s+(\d{1,3})%\s+positivas\s+"
