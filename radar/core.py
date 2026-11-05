@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
+from .popular import is_popular
 
 BR = ZoneInfo("America/Sao_Paulo")
 MONEY = r"R\$\s*([\d.]+,\d{2})"
@@ -156,11 +157,11 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
         log.info("Sem nota de critica: %s", page_url)
         return None
     reviews = _parse_reviews(before)
-    if reviews is None:
-        log.info("Sem nota/quantidade de avaliacoes de jogadores: %s", page_url)
-        return None
     critic = int(critic_match.group(1))
-    positive, count = reviews
+    # Nintendo não publica uma contagem de análises equivalente à Steam.
+    # Alguns títulos conhecidos não possuem esse indicador na fonte.
+    # Zero significa "não disponível", nunca "0% de aprovação".
+    positive, count = reviews if reviews is not None else (0, 0)
     if not all(0 <= score <= 100 for score in (critic, positive)):
         return None
 
@@ -204,12 +205,26 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
 
 
 def qualifies(o: Offer, settings: dict) -> bool:
-    return (o.price > Decimal("0")
-            and o.price <= Decimal(str(settings["max_price_brl"]))
-            and settings["min_discount_percent"] <= o.discount <= settings.get("max_discount_percent", 100)
-            and o.critic >= settings["min_critic_score"]
-            and o.player_positive >= settings["min_player_positive_percent"]
-            and o.player_reviews >= settings["min_player_reviews"])
+    """Apenas franquias conhecidas, oferta digital verificável e boas notas.
+
+    Avaliação de jogadores não é obrigatória quando a fonte não fornece
+    amostra suficiente. Se houver amostra robusta, ela deve ser positiva.
+    """
+    if not (Decimal("0") < o.price <= Decimal(str(settings["max_price_brl"]))):
+        return False
+    if not (settings["min_discount_percent"] <= o.discount
+            <= settings.get("max_discount_percent", 100)):
+        return False
+    if settings.get("popular_only", False) and not is_popular(o.title):
+        return False
+    if o.critic < settings["min_critic_score"]:
+        return False
+    # A nota de jogadores só restringe quando a fonte informa amostra
+    # de pelo menos min_player_reviews análises.
+    min_reviews = settings.get("min_player_reviews", 200)
+    if o.player_reviews >= min_reviews:
+        return o.player_positive >= settings["min_player_positive_percent"]
+    return True
 
 
 def select_alerts(offers: list[Offer], state: dict, bootstrap: bool = True
