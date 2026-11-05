@@ -11,7 +11,12 @@ on:
         type: boolean
         default: false
       test_email:
-        description: 'Enviar um e-mail de teste, sem consultar jogos nem alterar histórico?'
+        description: 'Enviar e-mail de teste SMTP, sem consultar jogos?'
+        required: false
+        type: boolean
+        default: false
+      preview_email:
+        description: 'Enviar prévia visual das ofertas atuais (não altera histórico)?'
         required: false
         type: boolean
         default: false
@@ -51,9 +56,12 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           SEND_INITIAL: ${{ inputs.send_initial }}
           TEST_EMAIL: ${{ inputs.test_email }}
+          PREVIEW_EMAIL: ${{ inputs.preview_email }}
         run: |
           if [ "$TEST_EMAIL" = "true" ]; then
             python -m radar.main --test-email
+          elif [ "$PREVIEW_EMAIL" = "true" ]; then
+            python -m radar.main --preview-email
           elif [ "$SEND_INITIAL" = "true" ]; then
             python -m radar.main --send-initial
           else
