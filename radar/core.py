@@ -35,13 +35,14 @@ class Offer:
     critic: int
     player_positive: int
     player_reviews: int
+    image_url: str = ""
 
     def as_dict(self) -> dict:
         return {"title": self.title, "page_url": self.page_url,
                 "shop_url": self.shop_url, "price": str(self.price),
                 "old_price": str(self.old_price), "discount": self.discount,
                 "critic": self.critic, "player_positive": self.player_positive,
-                "player_reviews": self.player_reviews}
+                "player_reviews": self.player_reviews, "image_url": self.image_url}
 
 
 def money(s: str) -> Decimal:
@@ -178,8 +179,28 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
     if not shop_url:
         log.warning("Link oficial Nintendo ausente: %s", page_url)
         return None
+    # Preferir a capa/arte principal, nunca imagens aleatórias da página.
+    # Aceitar apenas HTTPS em CDNs conhecidas de imagens de jogos.
+    allowed_images = (
+        "shared.fastly.steamstatic.com",
+        "images.igdb.com",
+        "cdn.cloudflare.steamstatic.com",
+        "steamcdn-a.akamaihd.net",
+    )
+    image_url = ""
+    candidates = []
+    for meta in soup.select('meta[property="og:image"], meta[name="twitter:image"]'):
+        candidates.append(meta.get("content", ""))
+    for img in soup.select("img[src]")[:6]:
+        candidates.append(img.get("src", ""))
+    for raw_url in candidates:
+        resolved = urljoin(page_url, raw_url)
+        parts = urlparse(resolved)
+        if (parts.scheme == "https" and parts.hostname in allowed_images):
+            image_url = resolved
+            break
     return Offer(title, page_url, shop_url, price, old_price, discount,
-                 critic, positive, count)
+                 critic, positive, count, image_url=image_url)
 
 
 def qualifies(o: Offer, settings: dict) -> bool:
