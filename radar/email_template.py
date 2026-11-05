@@ -89,7 +89,7 @@ def format_email(offers: list[Offer], max_items: int, *, preview: bool = False) 
 def format_test_email() -> tuple[str, str]:
     message = ("Teste de envio realizado. As configurações SMTP estão operacionais e "
                "o layout HTML pode ser exibido pelo seu provedor de e-mail. "
-               "Este teste não consulta promoções nem altera o histórico.")
+               "Este teste não altera o histórico nem consulta promoções.")
     body = ('<div style="padding:20px;border:1px solid #d1fae5;border-radius:10px;'
             'background:#f0fdf4;color:#166534;font-size:15px;line-height:24px">'
             '<strong>Teste de notificação</strong><p style="margin:9px 0 0">'
