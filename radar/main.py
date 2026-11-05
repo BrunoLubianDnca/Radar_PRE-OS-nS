@@ -85,11 +85,17 @@ def main(argv: list[str] | None = None) -> int:
     state_file = ROOT / "data/state.json"
     state = json.loads(state_file.read_text(encoding="utf-8"))
     session = requests.Session()
-    source = settings["source_url"]
-    html_listing = fetch(session, source)
-    urls = discovery(html_listing, source, int(settings["max_source_age_hours"]))
-    # MVP acompanha os jogos exibidos na primeira página da vitrine, não todo o catálogo.
-    LOG.info("Candidatos na vitrine: %d", len(urls))
+    sources = settings.get("source_urls") or [settings["source_url"]]
+    urls = []
+    for source in sources:
+        html_listing = fetch(session, source)
+        discovered = discovery(html_listing, source, int(settings["max_source_age_hours"]))
+        LOG.info("Fonte %s: %d candidatos", source, len(discovered))
+        for url in discovered:
+            if url not in urls:
+                urls.append(url)
+    # Usa duas vitrines públicas (não o catálogo inteiro).
+    LOG.info("Candidatos únicos nas vitrines: %d", len(urls))
     offers: list[Offer] = []
     failed = 0
     parsed_count = 0
