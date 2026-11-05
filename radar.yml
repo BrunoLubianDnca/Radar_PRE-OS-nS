@@ -1,0 +1,63 @@
+name: Radar Nintendo Switch
+
+on:
+  schedule:
+    # A cada 3 horas em UTC (mesmo intervalo no fuso de Brasília)
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      send_initial:
+        description: 'Enviar ofertas atuais mesmo no primeiro monitoramento?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: radar-nintendo-switch
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+      - name: Testar parser
+        run: pytest -q
+      - name: Consultar ofertas e enviar alertas
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          SEND_INITIAL: ${{ inputs.send_initial }}
+        run: |
+          if [ "$SEND_INITIAL" = "true" ]; then
+            python -m radar.main --send-initial
+          else
+            python -m radar.main
+          fi
+      - name: Persistir estado de ofertas
+        run: |
+          if ! git diff --quiet -- data/state.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add data/state.json
+            git commit -m 'chore: atualiza estado das promoções [skip ci]'
+            git push
+          else
+            echo 'Sem mudanças no estado.'
+          fi
