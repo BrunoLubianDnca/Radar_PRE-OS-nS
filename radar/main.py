@@ -40,7 +40,7 @@ def money_brl(value) -> str:
     return "R$ " + f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False) -> None:
+def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False, preview: bool = False) -> None:
     required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_TO"]
     missing = [name for name in required if not os.getenv(name)]
     if missing:
@@ -49,8 +49,9 @@ def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False
     msg["From"] = os.getenv("EMAIL_FROM") or os.environ["SMTP_USER"]
     msg["To"] = os.environ["EMAIL_TO"]
     msg["Subject"] = ("[Radar Switch] Teste de e-mail — configuração OK" if test_email
-                      else f"[Radar Switch] {len(offers)} promoção(ões) nova(s) até R$ 100")
-    plain, rich = format_test_email() if test_email else format_email(offers, max_items)
+                      else (f"[Radar Switch] PRÉVIA — {len(offers)} ofertas encontradas" if preview
+                            else f"[Radar Switch] {len(offers)} promoção(ões) nova(s) até R$ 100"))
+    plain, rich = format_test_email() if test_email else format_email(offers, max_items, preview=preview)
     msg.set_content(plain)
     msg.add_alternative(rich, subtype="html")
     host, port = os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"])
@@ -74,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Sem SMTP e sem salvar estado")
     parser.add_argument("--send-initial", action="store_true", help="Enviar ofertas da primeira execução")
     parser.add_argument("--test-email", action="store_true", help="Envia apenas um e-mail de teste, sem consulta ou mudanças no histórico")
+    parser.add_argument("--preview-email", action="store_true", help="Envia prévia das ofertas atuais sem salvar histórico")
     args = parser.parse_args(argv)
     if args.test_email:
         email_alert([], 0, test_email=True)
@@ -123,6 +125,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if len(urls) >= 10 and parsed_count < len(urls) // 3:
         raise RuntimeError("Cobertura do parser insuficiente; evitar histórico parcial")
+    if args.preview_email:
+        email_alert(offers, int(settings["max_games_per_email"]), preview=True)
+        LOG.info("Prévia de ofertas enviada, histórico não alterado")
+        return 0
     alerts, new_state = select_alerts(offers, state, bootstrap=not args.send_initial)
     LOG.info("Elegíveis: %d | Alertas: %d", len(offers), len(alerts))
     if args.dry_run:
