@@ -123,3 +123,39 @@ def test_email_html_with_cover_buttons_and_plain_text():
     test_plain, test_html = format_test_email()
     assert "não altera o histórico" in test_plain
     assert "<html" in test_html
+
+
+def test_popular_only_excludes_obscure_discounted_games():
+    from radar.popular import is_popular
+    source = parse_detail(DETAIL, URL)
+    assert source is not None
+    strict = dict(SETTINGS, popular_only=True, max_discount_percent=90)
+    assert not qualifies(source, strict)  # The Messenger nao é mainstream
+    assert not is_popular("Moonlighter")
+    assert not is_popular("Children of Morta")
+    assert not is_popular("Dicey Dungeons")
+    for name in ("Terraria", "Sid Meier's Civilization VI",
+                 "FINAL FANTASY XII THE ZODIAC AGE", "Mario Kart 8 Deluxe",
+                 "The Legend of Zelda: Breath of the Wild", "Stardew Valley"):
+        assert is_popular(name)
+        candidate = Offer(**{**source.__dict__, "title": name})
+        assert qualifies(candidate, strict)
+    # Uma franquia famosa ainda precisa respeitar o preco e o desconto.
+    assert not qualifies(Offer(**{**source.__dict__, "title": "Terraria",
+                                 "price": Decimal("101.00")}), strict)
+    assert not qualifies(Offer(**{**source.__dict__, "title": "Terraria",
+                                 "discount": 20}), strict)
+
+
+def test_famous_switch_games_without_steam_review_metrics():
+    mainline = DETAIL.replace("The Messenger", "Mario Kart 8 Deluxe")
+    mainline = mainline.replace("Jogadores 98% positivas 1,4 mil análises", "")
+    offer = parse_detail(mainline, URL)
+    assert offer is not None
+    assert offer.player_reviews == 0
+    assert offer.player_positive == 0
+    assert qualifies(offer, dict(SETTINGS, popular_only=True))
+    # Notas negativas com amostra de jogadores suficiente continuam bloqueadas.
+    negative = Offer(**{**offer.__dict__,
+                        "player_reviews": 2000, "player_positive": 40})
+    assert not qualifies(negative, dict(SETTINGS, popular_only=True))
