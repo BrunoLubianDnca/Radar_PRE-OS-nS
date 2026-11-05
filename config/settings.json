@@ -4,10 +4,11 @@
   "min_critic_score": 80,
   "min_player_positive_percent": 85,
   "min_player_reviews": 200,
-  "max_games_per_email": 15,
+  "max_games_per_email": 12,
   "max_listing_pages": 1,
   "max_source_age_hours": 48,
   "request_delay_seconds": 1.5,
   "source_url": "https://valeojogo.com.br/promocoes/switch/",
-  "max_discount_percent": 90
+  "max_discount_percent": 90,
+  "popular_only": true
 }
