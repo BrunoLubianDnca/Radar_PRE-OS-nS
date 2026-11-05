@@ -166,13 +166,26 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
         r"R\$\s*([\d.]+,\d{2})",
         snippet, re.I
     )
-    if not deal:
-        log.warning("Preco/desconto eShop nao reconhecido: %s | %s",
-                    page_url, snippet[:130])
-        return None
-    old_price, discount, price = (
-        money(deal.group(1)), int(deal.group(2)), money(deal.group(3))
-    )
+    if deal:
+        old_price, discount, price = (
+            money(deal.group(1)), int(deal.group(2)), money(deal.group(3))
+        )
+    else:
+        # Formato alternativo explícito: "-75% R$ 22,49 de R$ 89,99".
+        # Não procurar números fora da entrada da eShop (risco de pegar PC/PS).
+        alternative = re.search(
+            r"[−–-]\s*(\d{1,3})\s*%\s*R\$\s*([\d.]+,\d{2})\s*"
+            r"(?:de|antes|era)\s*R\$\s*([\d.]+,\d{2})",
+            snippet[:160], re.I
+        )
+        if not alternative:
+            log.warning("Preco/desconto eShop nao reconhecido: %s | %s",
+                        page_url, snippet[:130])
+            return None
+        discount, price, old_price = (
+            int(alternative.group(1)), money(alternative.group(2)),
+            money(alternative.group(3))
+        )
     if not (Decimal("0") < price < old_price and 1 <= discount <= 99):
         log.warning("Valores eShop invalidos: %s", page_url)
         return None
