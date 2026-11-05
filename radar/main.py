@@ -18,6 +18,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from .core import BR, Offer, discovery, parse_detail, qualifies, select_alerts
+from .email_template import format_email, format_test_email
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADERS = {"User-Agent": "RadarSwitchMVP/1.0 (personal-deal-checker; +https://github.com)",
@@ -39,40 +40,7 @@ def money_brl(value) -> str:
     return "R$ " + f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def format_email(offers: list[Offer], max_items: int) -> tuple[str, str]:
-    shown = offers[:max_items]
-    timestamp = datetime.now(BR).strftime("%d/%m/%Y %H:%M")
-    lines = [f"Radar Nintendo Switch — {len(offers)} nova(s) oferta(s)",
-             f"Consulta: {timestamp} (Brasília)", "", "Jogos digitais da eShop Brasil:", ""]
-    blocks = []
-    for o in shown:
-        lines += [f"{o.title} | {money_brl(o.price)} (antes {money_brl(o.old_price)}) | -{o.discount}%",
-                  f"Crítica {o.critic}/100 | Jogadores {o.player_positive}% ({o.player_reviews} análises)",
-                  f"Nintendo: {o.shop_url}", f"Fonte do preço: {o.page_url}", ""]
-        blocks.append("<tr><td style='padding:18px;border-bottom:1px solid #e5e7eb'>"
-                      f"<strong>{html.escape(o.title)}</strong><br>"
-                      f"<span style='font-size:22px;color:#047857;font-weight:bold'>{money_brl(o.price)}</span> "
-                      f"<span style='color:#6b7280'>de {money_brl(o.old_price)} (-{o.discount}%)</span><br>"
-                      f"Crítica: {o.critic}/100 · Jogadores: {o.player_positive}% "
-                      f"({o.player_reviews} avaliações)<br>"
-                      f"<a href='{html.escape(o.shop_url, quote=True)}'>Ver na Nintendo</a> · "
-                      f"<a href='{html.escape(o.page_url, quote=True)}'>Conferir preço e avaliações</a>"
-                      "</td></tr>")
-    if len(offers) > len(shown):
-        lines.append(f"Mais {len(offers)-len(shown)} ofertas omitidas para manter o e-mail curto.")
-    lines.append("Os preços podem mudar; confirme o valor final na eShop antes de comprar.")
-    text = "\n".join(lines)
-    html_body = ("<html><body style='background:#f4f6f8;padding:20px;font-family:Arial,sans-serif'>"
-                 "<div style='max-width:640px;margin:auto;background:white;padding:24px;border-radius:12px'>"
-                 f"<h2>Radar Nintendo Switch</h2><p>{len(offers)} nova(s) oferta(s) · {timestamp}</p>"
-                 f"<table style='width:100%;border-collapse:collapse'>{''.join(blocks)}</table>"
-                 "<p style='font-size:12px;color:#6b7280'>Confira preços e disponibilidade na eShop "
-                 "antes de comprar. Informações obtidas de páginas públicas do Vale o Jogo.</p>"
-                 "</div></body></html>")
-    return text, html_body
-
-
-def email_alert(offers: list[Offer], max_items: int) -> None:
+def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False) -> None:
     required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_TO"]
     missing = [name for name in required if not os.getenv(name)]
     if missing:
@@ -80,8 +48,9 @@ def email_alert(offers: list[Offer], max_items: int) -> None:
     msg = EmailMessage()
     msg["From"] = os.getenv("EMAIL_FROM") or os.environ["SMTP_USER"]
     msg["To"] = os.environ["EMAIL_TO"]
-    msg["Subject"] = f"[Radar Switch] {len(offers)} promoção(ões) nova(s) até R$ 100"
-    plain, rich = format_email(offers, max_items)
+    msg["Subject"] = ("[Radar Switch] Teste de e-mail — configuração OK" if test_email
+                      else f"[Radar Switch] {len(offers)} promoção(ões) nova(s) até R$ 100")
+    plain, rich = format_test_email() if test_email else format_email(offers, max_items)
     msg.set_content(plain)
     msg.add_alternative(rich, subtype="html")
     host, port = os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"])
@@ -104,7 +73,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Sem SMTP e sem salvar estado")
     parser.add_argument("--send-initial", action="store_true", help="Enviar ofertas da primeira execução")
+    parser.add_argument("--test-email", action="store_true", help="Envia apenas um e-mail de teste, sem consulta ou mudanças no histórico")
     args = parser.parse_args(argv)
+    if args.test_email:
+        email_alert([], 0, test_email=True)
+        LOG.info("E-mail de teste aceito pelo SMTP; nenhuma coleta e nenhum estado alterado")
+        return 0
     settings = json.loads((ROOT / "config/settings.json").read_text(encoding="utf-8"))
     state_file = ROOT / "data/state.json"
     state = json.loads(state_file.read_text(encoding="utf-8"))
