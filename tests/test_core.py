@@ -54,3 +54,36 @@ def test_bootstrap_and_dedupe_and_drop():
     # Uma oferta encerrada e retornando deve gerar novo aviso.
     _, gone = select_alerts([], state)
     assert select_alerts([deal], gone)[0] == [deal]
+
+
+def test_eshop_discount_range_and_price_ceiling():
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    settings = dict(SETTINGS, max_discount_percent=90)
+
+    # Sem preco minimo: ofertas abaixo de R$50 tambem sao validas.
+    assert qualifies(base, settings)
+    for price in ("0.01", "49.99", "50.00", "100.00"):
+        candidate = Offer(**{**base.__dict__, "price": Decimal(price)})
+        assert qualifies(candidate, settings)
+    assert not qualifies(Offer(**{**base.__dict__, "price": Decimal("100.01")}), settings)
+    assert not qualifies(Offer(**{**base.__dict__, "price": Decimal("0.00")}), settings)
+
+    for discount in (30, 50, 90):
+        candidate = Offer(**{**base.__dict__, "discount": discount})
+        assert qualifies(candidate, settings)
+    for discount in (29, 91):
+        candidate = Offer(**{**base.__dict__, "discount": discount})
+        assert not qualifies(candidate, settings)
+
+
+def test_alert_order_prefers_largest_discount():
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    offers = [
+        Offer(**{**base.__dict__, "page_url": URL + "30", "discount": 30}),
+        Offer(**{**base.__dict__, "page_url": URL + "90", "discount": 90}),
+        Offer(**{**base.__dict__, "page_url": URL + "50", "discount": 50}),
+    ]
+    alerts, _ = select_alerts(offers, {"initialized": True, "active": {}})
+    assert [o.discount for o in alerts] == [90, 50, 30]
