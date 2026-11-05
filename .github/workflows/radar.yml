@@ -1,9 +1,11 @@
+
 name: Radar Nintendo Switch
 
 on:
   schedule:
-    # A cada 3 horas em UTC (mesmo intervalo no fuso de Brasília)
+    # Executa a cada 3 horas (UTC)
     - cron: '17 */3 * * *'
+
   workflow_dispatch:
     inputs:
       send_initial:
@@ -23,18 +25,25 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Baixar arquivos do projeto
+        uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - uses: actions/setup-python@v5
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
+
       - name: Testar parser
-        run: pytest -q
+        run: python -m pytest -q
+
       - name: Consultar ofertas e enviar alertas
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -50,6 +59,7 @@ jobs:
           else
             python -m radar.main
           fi
+
       - name: Persistir estado de ofertas
         run: |
           if ! git diff --quiet -- data/state.json; then
