@@ -50,3 +50,43 @@ def is_popular(title: str) -> bool:
         " " + normalized_title(name) + " " in value
         for name in POPULAR_GAMES
     )
+
+
+
+def popularity_evidence(title: str, critic: int, player_positive: int,
+                        player_reviews: int) -> tuple[int, str]:
+    """Estimativa editorial (0..100), NÃO são vendas ou popularidade oficial.
+
+    Fontes dos sinais: título/franquia conhecida da lista auditável, nota da
+    crítica e nota/quantidade de avaliações exibidas pelo Vale o Jogo.
+    Volume é proporcional em escala logarítmica para evitar que um único
+    jogo com centenas de milhares de avaliações domine todos os alertas.
+    """
+    import math
+    franchise = is_popular(title)
+    # A ausência de dados não é confundida com avaliação negativa.
+    score = (25 if franchise else 0) + round(max(0, min(100, critic)) * 0.30)
+    evidence = ["franquia editorial" if franchise else "sem franquia reconhecida",
+                f"crítica {critic}/100"]
+    if player_reviews > 0:
+        volume = min(30, round(6 * math.log10(player_reviews + 1)))
+        score += volume
+        evidence.append(f"{player_reviews} avaliações na fonte")
+        if player_positive >= 85:
+            score += 15
+            evidence.append(f"{player_positive}% positivas")
+    else:
+        evidence.append("avaliações de jogadores não informadas")
+    return min(100, score), "; ".join(evidence)
+
+
+def rank_offers(offers: list) -> list:
+    """Ordem de relevância explicável, preservando objetos Offer sem mutações."""
+    return sorted(
+        offers,
+        key=lambda o: (
+            -popularity_evidence(o.title, o.critic, o.player_positive,
+                                 o.player_reviews)[0],
+            -o.discount, o.price, o.title.casefold()
+        ),
+    )
