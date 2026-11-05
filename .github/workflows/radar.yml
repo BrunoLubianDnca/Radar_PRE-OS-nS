@@ -58,7 +58,24 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add data/state.json
             git commit -m 'chore: atualiza estado das promoções [skip ci]'
-            git push
+            # A branch pode receber commits enquanto analisamos as ofertas.
+            # Reaplicar nosso commit no topo evita erro "fetch first".
+            for attempt in 1 2 3; do
+              git fetch origin main
+              if ! git rebase origin/main; then
+                git rebase --abort || true
+                echo 'Conflito ao atualizar estado; nada foi sobrescrito.'
+                exit 1
+              fi
+              if git push origin HEAD:main; then
+                echo 'Histórico persistido com sucesso.'
+                exit 0
+              fi
+              echo "Branch atualizada durante o push; tentativa $attempt/3"
+              sleep 2
+            done
+            echo 'Não foi possível persistir o estado após 3 tentativas.'
+            exit 1
           else
             echo 'Sem mudanças no estado.'
           fi
