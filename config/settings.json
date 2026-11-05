@@ -8,5 +8,6 @@
   "max_listing_pages": 1,
   "max_source_age_hours": 48,
   "request_delay_seconds": 1.5,
-  "source_url": "https://valeojogo.com.br/promocoes/switch/"
+  "source_url": "https://valeojogo.com.br/promocoes/switch/",
+  "min_price_brl": 50
 }
