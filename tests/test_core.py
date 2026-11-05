@@ -87,3 +87,39 @@ def test_alert_order_prefers_largest_discount():
     ]
     alerts, _ = select_alerts(offers, {"initialized": True, "active": {}})
     assert [o.discount for o in alerts] == [90, 50, 30]
+
+
+def test_image_extracted_only_from_allowlisted_cdn():
+    detail = DETAIL.replace(
+        "<h1>The Messenger</h1>",
+        '<h1>The Messenger</h1><img src="https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/764790/header.jpg">'
+    )
+    deal = parse_detail(detail, URL)
+    assert deal is not None
+    assert deal.image_url.startswith("https://shared.fastly.steamstatic.com/")
+    malicious = DETAIL.replace(
+        "<h1>The Messenger</h1>",
+        '<h1>The Messenger</h1><img src="https://tracker.example/img.png">'
+    )
+    other = parse_detail(malicious, URL)
+    assert other is not None and not other.image_url
+
+
+def test_email_html_with_cover_buttons_and_plain_text():
+    from radar.email_template import format_email, format_test_email
+    offer = parse_detail(DETAIL, URL)
+    assert offer is not None
+    offer = Offer(**{**offer.__dict__, "image_url":
+                   "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/764790/header.jpg"})
+    plain, rich = format_email([offer], 10, preview=True)
+    assert "The Messenger" in plain
+    assert "PRÉVIA" in plain
+    assert 'alt="Capa de The Messenger"' in rich
+    assert "Ver na Nintendo eShop" in rich
+    assert "R$ 14,79" in rich
+    assert "-80% OFF" in rich
+    no_cover = Offer(**{**offer.__dict__, "image_url": ""})
+    assert "Nintendo Switch</div>" in format_email([no_cover], 10)[1]
+    test_plain, test_html = format_test_email()
+    assert "não altera o histórico" in test_plain
+    assert "<html" in test_html
