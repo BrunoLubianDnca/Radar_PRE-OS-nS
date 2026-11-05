@@ -119,7 +119,7 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
     section = text[start:end] if end >= 0 else text[start:start + 4000]
 
     # Isolar a entrada da eShop, mesmo com outras plataformas na página.
-    entry = re.search(r"Switch\\s+digital\\s+Nintendo\\s+eShop", section, re.I)
+    entry = re.search(r"Switch\s+digital\s+Nintendo\s+eShop", section, re.I)
     if entry is None:
         log.info("Sem oferta Switch digital eShop: %s", page_url)
         return None
@@ -127,8 +127,8 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
     # Os primeiros preços da entrada devem estar na sequência:
     # preço antigo, desconto, preço atual.
     deal = re.search(
-        r"R\\$\\s*([\\d.]+,\\d{2})\\s*[−–-]\\s*(\\d{1,3})\\s*%\\s*"
-        r"R\\$\\s*([\\d.]+,\\d{2})",
+        r"R\$\s*([\d.]+,\d{2})\s*[−–-]\s*(\d{1,3})\s*%\s*"
+        r"R\$\s*([\d.]+,\d{2})",
         snippet, re.I
     )
     if not deal:
@@ -148,8 +148,8 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
 
     before = text[:start]
     critic_match = (
-        re.search(r"(\\d{1,3})\\s+Crítica\\b", before, re.I)
-        or re.search(r"Crítica\\s+(\\d{1,3})\\b", before, re.I)
+        re.search(r"(\d{1,3})\s+Crítica\b", before, re.I)
+        or re.search(r"Crítica\s+(\d{1,3})\b", before, re.I)
     )
     if critic_match is None:
         log.info("Sem nota de critica: %s", page_url)
