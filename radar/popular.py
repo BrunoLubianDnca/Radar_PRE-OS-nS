@@ -28,6 +28,7 @@ POPULAR_GAMES = (
     "dave the diver", "dredge", "overcooked", "it takes two",
     "the binding of isaac", "vampire survivors", "ori and the",
     "untitled goose game", "little nightmares", "the walking dead",
+    "life is strange", "prince of persia", "tetris effect", "tekken",
     "subnautica", "no man's sky", "no mans sky", "portal",
     "disco elysium", "risk of rain", "darkest dungeon",
     "return to monkey island", "monkey island", "undertale",
