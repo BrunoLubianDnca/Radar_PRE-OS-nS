@@ -23,7 +23,7 @@ from .nintendo import is_nintendo_priority
 from .official_sales import parse_official_sales
 from .nintendo_catalog import fetch_catalog, fetch_regional_prices
 from .nintendo_watch import (create_watch_report, register_candidate,
-                             register_result, watch_counts)
+                             register_catalog_match, register_result, watch_counts)
 from .email_template import format_email, format_test_email
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -271,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("Nintendo catálogo BR: %d títulos resolvidos; %d ambíguos",
                  len(catalog), ambiguous)
         for title, product in catalog.items():
-            register_candidate(watch_report, title, product.shop_url)
+            register_catalog_match(watch_report, title, product.shop_url)
         price_offers = fetch_regional_prices(session, catalog)
         LOG.info("Nintendo preços BR: %d ofertas com desconto verificado",
                  len(price_offers))
