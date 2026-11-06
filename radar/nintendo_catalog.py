@@ -192,202 +192,56 @@ def parse_store_deal_hits(payload: dict) -> dict[str, CatalogProduct]:
 
 
 def fetch_store_deals(session: requests.Session, pages: int = 2) -> tuple[dict[str, CatalogProduct], dict]:
-    """Lê a seleção Deals da mesma base usada pela página oficial de ofertas.
+    """Busca Deals pelo endpoint de consulta direta da loja Nintendo Brasil.
 
-    Usa os resultados para DESCOBRIR jogos; preços e promoções são
-    confirmados posteriormente na API de preços BR por NSUID.
+    Mantém um diagnóstico da consulta sem filtros se Deals vier vazio:
+    distingue índice vazio de facet incompatível.
     """
     found: dict[str, CatalogProduct] = {}
-    stats = {"hits": 0, "matches": 0, "fields": [], "pages": 0}
+    stats = {"hits": 0, "matches": 0, "fields": [], "pages": 0,
+             "unfiltered_hits": None, "facet_unavailable": False}
+    endpoint = f"https://u3b6gr4ua3-dsn.algolia.net/1/indexes/{ALGOLIA_INDEX}/query"
+    headers = {"x-algolia-application-id": ALGOLIA_APP,
+               "x-algolia-api-key": ALGOLIA_SEARCH_KEY,
+               "User-Agent": "RadarSwitchMVP/1.0",
+               "Origin": "https://www.nintendo.com"}
     for page in range(max(1, min(pages, 3))):
         response = session.post(
-            ALGOLIA_URL,
-            json={"requests": [{"indexName": ALGOLIA_INDEX, "params":
-                 "query=&hitsPerPage=80&page=" + str(page) +
-                 "&filters=" + requests.utils.quote('topLevelFilters:"Deals"', safe="")}]},
-            headers={"x-algolia-application-id": ALGOLIA_APP,
-                     "x-algolia-api-key": ALGOLIA_SEARCH_KEY,
-                     "User-Agent": "RadarSwitchMVP/1.0",
-                     "Origin": "https://www.nintendo.com"},
-            timeout=(10, 25), allow_redirects=False,
+            endpoint,
+            json={"query": "", "hitsPerPage": 80, "page": page,
+                  "filters": '(topLevelFilters:"Deals")'},
+            headers=headers, timeout=(10, 25), allow_redirects=False,
         )
         response.raise_for_status()
-        if response.url.rstrip("/") != ALGOLIA_URL.rstrip("/"):
+        if response.url.rstrip("/") != endpoint.rstrip("/"):
             raise ValueError("Destino inesperado na consulta Deals Nintendo")
         payload = response.json()
-        current = catalog_diagnostics(payload)
-        stats["hits"] += current["hits"]
-        stats["fields"] = current["fields"] or stats["fields"]
+        if not isinstance(payload, dict) or not isinstance(payload.get("hits"), list):
+            raise ValueError("Resposta inesperada do índice Deals Nintendo")
+        hits = payload["hits"]
+        stats["hits"] += len(hits)
         stats["pages"] += 1
-        current_matches = parse_store_deal_hits(payload)
-        found.update(current_matches)
-        if current["hits"] < 80:
+        stats["fields"] = sorted({k for hit in hits[:3]
+                                  if isinstance(hit, dict) for k in hit.keys()})[:40]
+        found.update(parse_store_deal_hits({"results": [{"hits": hits}]}))
+        if len(hits) < 80:
             break
+    if stats["hits"] == 0:
+        probe = session.post(
+            endpoint, json={"query": "", "hitsPerPage": 1},
+            headers=headers, timeout=(10, 25), allow_redirects=False,
+        )
+        probe.raise_for_status()
+        if probe.url.rstrip("/") != endpoint.rstrip("/"):
+            raise ValueError("Destino inesperado na sondagem Nintendo")
+        payload = probe.json()
+        if not isinstance(payload, dict) or not isinstance(payload.get("hits"), list):
+            raise ValueError("Sondagem Nintendo retornou estrutura inválida")
+        stats["unfiltered_hits"] = len(payload["hits"])
+        stats["facet_unavailable"] = bool(payload["hits"])
+        stats["fields"] = sorted({k for hit in payload["hits"]
+                                  if isinstance(hit, dict) for k in hit.keys()})[:40]
     stats["matches"] = len(found)
     return found, stats
 
 
-def price_response_diagnostics(payload: dict, products: dict[str, CatalogProduct]) -> dict:
-    """Diagnostica preços sem expor valores não verificados ou credenciais."""
-    if not isinstance(payload, dict):
-        return {"error": "resposta não é objeto"}
-    rows = payload.get("prices")
-    if not isinstance(rows, list):
-        return {"error": "prices ausente ou não é lista", "fields": sorted(payload)[:15]}
-    ids = {p.nsuid for p in products.values()}
-    relevant = [r for r in rows if isinstance(r, dict) and
-                str(r.get("title_id", "")) in ids]
-    return {
-        "api_rows": len(rows),
-        "ids_solicitados": len(ids),
-        "ids_reconhecidos": len(relevant),
-        "com_preco_normal": sum(isinstance(r.get("regular_price"), dict) for r in relevant),
-        "com_preco_promocional": sum(isinstance(r.get("discount_price"), dict) for r in relevant),
-        "com_preco_BRL": sum(_brl_amount(r.get("discount_price")) is not None for r in relevant),
-        "statuses": sorted({str(r.get("sales_status", "")) for r in relevant})[:8],
-        "price_fields": sorted({k for r in relevant[:2] for k in r.keys()})[:15],
-        "sale_fields": sorted({k for r in relevant[:2]
-                               if isinstance(r.get("discount_price"), dict)
-                               for k in r["discount_price"].keys()})[:15],
-    }
-
-
-OFFICIAL_SALES_API = "https://ec.nintendo.com/api/BR/pt/search/sales"
-
-
-def fetch_official_sales_list(session: requests.Session, max_pages: int = 3
-                              ) -> tuple[list[dict], dict]:
-    """Catálogo de ofertas eShop BR; endpoint antigo, disponibilidade incerta.
-
-    Usamos apenas NSUIDs que possam ser ligados com segurança a um jogo
-    e posteriormente confirmados na API regional de preços.
-    """
-    collected: list[dict] = []
-    stats = {"pages": 0, "items": 0, "total": None, "fields": []}
-    for page in range(max(1, min(max_pages, 5))):
-        resp = session.get(
-            OFFICIAL_SALES_API, params={"count": 50, "offset": 50 * page},
-            headers={"User-Agent": "RadarSwitchMVP/1.0"},
-            timeout=(8, 20), allow_redirects=False,
-        )
-        resp.raise_for_status()
-        target = urlparse(resp.url)
-        if target.scheme != "https" or target.hostname != "ec.nintendo.com":
-            raise ValueError("Redirecionamento não autorizado na lista de ofertas")
-        data = resp.json()
-        if not isinstance(data, dict) or not isinstance(data.get("contents"), list):
-            raise ValueError("Formato inesperado na lista oficial de ofertas")
-        entries = data["contents"]
-        stats["pages"] += 1
-        stats["items"] += len(entries)
-        stats["total"] = data.get("total") if isinstance(data.get("total"), int) else None
-        stats["fields"] = sorted({k for item in entries[:3]
-                                   if isinstance(item, dict) for k in item.keys()})[:25]
-        collected.extend(item for item in entries if isinstance(item, dict))
-        if len(entries) < 50:
-            break
-    return collected, stats
-
-
-def match_official_sales_ids(items: list[dict],
-                             catalog: dict[str, CatalogProduct]
-                             ) -> dict[str, CatalogProduct]:
-    """A lista oficial precisa trazer o MESMO NSUID do catálogo validado."""
-    known = {p.nsuid: p for p in catalog.values()}
-    found: dict[str, CatalogProduct] = {}
-    for item in items:
-        identifier = str(item.get("id", ""))
-        if identifier in known:
-            found[known[identifier].title] = known[identifier]
-    return found
-
-
-def _brl_amount(raw: object) -> Decimal | None:
-    if not isinstance(raw, dict) or raw.get("currency") != "BRL":
-        return None
-    value = raw.get("amount", raw.get("raw_value"))
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        value = str(value)
-    if not isinstance(value, str) or not re.fullmatch(r"\d+(?:\.\d{1,2})?", value):
-        return None
-    try:
-        return Decimal(value)
-    except InvalidOperation:
-        return None
-
-
-def _sale_is_current(raw: dict, now: datetime) -> bool:
-    for field, before in (("start_datetime", False), ("end_datetime", True)):
-        when = raw.get(field)
-        if not when:
-            continue
-        if not isinstance(when, str):
-            return False
-        try:
-            dt = datetime.fromisoformat(when.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                return False
-            dt = dt.astimezone(timezone.utc)
-        except ValueError:
-            return False
-        if before and now > dt:
-            return False
-        if not before and now < dt:
-            return False
-    return True
-
-
-def parse_regional_prices(payload: dict, products: dict[str, CatalogProduct],
-                          now: datetime | None = None) -> list[VerifiedPrice]:
-    """Exige country=BR, currency=BRL e desconto ativo para ID cadastrado."""
-    if not isinstance(payload, dict) or (
-        payload.get("country") not in (None, "BR")
-    ):
-        raise ValueError("Preço de outra região ou resposta inválida")
-    prices = payload.get("prices")
-    if not isinstance(prices, list):
-        raise ValueError("Sem lista de preços da eShop Brasil")
-    by_id = {p.nsuid: p for p in products.values()}
-    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    verified = []
-    seen = set()
-    for row in prices:
-        if not isinstance(row, dict):
-            continue
-        nsuid = str(row.get("title_id", ""))
-        if nsuid not in by_id or nsuid in seen:
-            continue
-        seen.add(nsuid)
-        old = _brl_amount(row.get("regular_price"))
-        sale_data = row.get("discount_price")
-        sale = _brl_amount(sale_data)
-        if old is None or sale is None or not (Decimal("0") < sale < old):
-            continue
-        if not _sale_is_current(sale_data, now):
-            continue
-        discount = int(((old - sale) / old * 100).quantize(
-            Decimal("1"), rounding=ROUND_HALF_UP))
-        if not 1 <= discount <= 99:
-            continue
-        verified.append(VerifiedPrice(by_id[nsuid], sale, old, discount))
-    return verified
-
-
-def fetch_regional_prices(session: requests.Session,
-                          products: dict[str, CatalogProduct],
-                          diagnostics: dict | None = None) -> list[VerifiedPrice]:
-    if not products:
-        return []
-    ids = ",".join(sorted({p.nsuid for p in products.values()}))
-    response = session.get(PRICE_URL,
-                           params={"country": "BR", "ids": ids, "lang": "en"},
-                           headers={"User-Agent": "RadarSwitchMVP/1.0"},
-                           timeout=(10, 25), allow_redirects=False)
-    response.raise_for_status()
-    parts = urlparse(response.url)
-    if parts.scheme != "https" or parts.hostname != "api.ec.nintendo.com":
-        raise ValueError("Redirecionamento inesperado na API Nintendo")
-    payload = response.json()
-    if diagnostics is not None:
-        diagnostics.update(price_response_diagnostics(payload, products))
-    return parse_regional_prices(payload, products)
