@@ -225,3 +225,14 @@ def test_explicit_alternate_price_order_still_verifies_discount_and_store():
     assert parse_detail(alternate.replace("-80%", "-95%"), URL) is None
     # Link fora da Nintendo não é compra digital verificada.
     assert parse_detail(alternate.replace("www.nintendo.com", "fake.example"), URL) is None
+
+
+def test_general_multiplatform_source_does_not_reduce_switch_coverage():
+    from radar.main import ensure_primary_coverage
+    # Execução real: 59 URLs ao todo, mas apenas 36 são das vitrines Switch.
+    # Os 23 candidatos da vitrine geral não entram no denominador.
+    assert ensure_primary_coverage(36, 17) is None
+    # Ainda precisamos bloquear quando as fontes Switch param de funcionar.
+    with pytest.raises(RuntimeError, match="Cobertura Switch insuficiente"):
+        ensure_primary_coverage(36, 4)
+    assert ensure_primary_coverage(9, 1) is None
