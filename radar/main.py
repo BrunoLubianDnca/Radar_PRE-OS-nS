@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
             LOG.warning("Nintendo Deals sem correspondência: campos disponíveis no índice=%s",
                         ", ".join(deal_stats["fields"]))
         for name, product in deal_catalog.items():
-            if watch_report[name].status != "oferta elegível":
+            if name in watch_report and watch_report[name].status != "oferta elegível":
                 register_catalog_match(watch_report, name, product.shop_url)
         verified_deals = fetch_regional_prices(session, deal_catalog)
         LOG.info("Nintendo vitrine Deals: %d promoções BRL confirmadas", len(verified_deals))
