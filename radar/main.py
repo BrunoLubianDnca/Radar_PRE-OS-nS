@@ -85,6 +85,13 @@ def ensure_primary_coverage(primary_count: int, primary_parsed: int) -> None:
         )
 
 
+def is_optional_source(source: str) -> bool:
+    """Vitrines amplas adicionam oportunidades, sem bloquear o radar Switch."""
+    return urlparse(source).path.rstrip("/") in (
+        "/promocoes/bem-avaliados", "/promocoes/nintendo"
+    )
+
+
 def prioritize_email_offers(offers: list[Offer]) -> list[Offer]:
     """Primeiro a curadoria Nintendo, depois relevância dos demais jogos."""
     first_party = [o for o in offers if is_nintendo_priority(o.title)]
@@ -122,8 +129,14 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if visited:
                 time.sleep(float(settings["request_delay_seconds"]))
-            html_listing = fetch(session, page_url)
-            discovered = discovery(html_listing, page_url, int(settings["max_source_age_hours"]))
+            try:
+                html_listing = fetch(session, page_url)
+                discovered = discovery(html_listing, page_url, int(settings["max_source_age_hours"]))
+            except (requests.RequestException, RuntimeError, ValueError) as exc:
+                if not is_optional_source(source):
+                    raise
+                LOG.warning("Fonte complementar indisponível %s: %s. Coleta Switch preservada.", page_url, exc)
+                break
             visited.add(page_url)
             LOG.info("Vitrine %s: %d candidatos", page_url, len(discovered))
             for url in discovered:
