@@ -642,3 +642,42 @@ def test_email_delivery_summary_reports_sent_vs_no_alerts(tmp_path, monkeypatch)
     assert "aceito pelo servidor SMTP" in summary
     assert "Ofertas no e-mail: **7**" in summary
     assert "Ofertas já conhecidas" in summary
+
+
+
+def test_official_sales_page_is_consulted_first_even_if_other_source_fails(monkeypatch, tmp_path):
+    """A Nintendo abre cada ciclo antes das vitrines; sem alterar histórico."""
+    import json
+    import radar.main as main_module
+
+    config = {
+        "source_urls": ["https://valeojogo.com.br/promocoes/switch/"],
+        "max_listing_pages": 1,
+        "max_source_age_hours": 48,
+        "request_delay_seconds": 0,
+    }
+    (tmp_path / "config").mkdir()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "config/settings.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "data/state.json").write_text(
+        '{"initialized": true, "active": {}}', encoding="utf-8"
+    )
+    monkeypatch.setattr(main_module, "ROOT", tmp_path)
+    calls = []
+
+    def fake_official(_session):
+        calls.append("nintendo")
+        return "<html>" + ("ofertas " * 100) + "</html>"
+
+    def fake_listing(_session, _url):
+        calls.append("vitrine")
+        raise ValueError("simulação: página alternativa fora do ar")
+
+    monkeypatch.setattr(main_module, "fetch_nintendo_sales", fake_official)
+    monkeypatch.setattr(main_module, "fetch", fake_listing)
+    with pytest.raises(ValueError, match="simulação"):
+        main_module.main(["--dry-run"])
+    assert calls == ["nintendo", "vitrine"]
+    assert (tmp_path / "data/state.json").read_text(encoding="utf-8") == (
+        '{"initialized": true, "active": {}}'
+    )
