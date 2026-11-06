@@ -568,3 +568,77 @@ def test_catalog_accepts_nintendo_sourced_unlocalized_store_path_only():
         "https://www.nintendo.com/pt-br/store/products/"
         "donkey-kong-country-tropical-freeze-switch/"
     )
+
+
+
+def test_real_email_mime_structure_with_mock_smtp(monkeypatch):
+    """Valida email completo como enviado, sem acessar secrets ou rede."""
+    from email import policy
+    from email.parser import BytesParser
+    from radar.main import email_alert
+    import radar.main as main_module
+
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            assert host == "smtp.example.test" and port == 465
+            assert timeout == 30
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+        def login(self, user, password):
+            assert (user, password) == ("radar@example.test", "test-password")
+        def send_message(self, msg):
+            sent.append(BytesParser(policy=policy.default).parsebytes(msg.as_bytes()))
+
+    for key, value in {
+        "SMTP_HOST": "smtp.example.test",
+        "SMTP_PORT": "465",
+        "SMTP_USER": "radar@example.test",
+        "SMTP_PASSWORD": "test-password",
+        "EMAIL_TO": "destino@example.test",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.delenv("EMAIL_FROM", raising=False)
+    monkeypatch.setattr(main_module.smtplib, "SMTP_SSL", FakeSMTP)
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    mario = Offer(**{**base.__dict__, "title": "Super Mario Bros. Wonder",
+                     "price": Decimal("199.90"), "old_price": Decimal("329.90"),
+                     "discount": 39})
+    email_alert([mario], 12, preview=True)
+    assert len(sent) == 1
+    msg = sent[0]
+    assert msg["To"] == "destino@example.test"
+    assert msg["From"] == "radar@example.test"
+    assert "PRÉVIA" in str(msg["Subject"])
+    assert msg.is_multipart()
+    plain = msg.get_body(preferencelist=("plain",)).get_content()
+    html = msg.get_body(preferencelist=("html",)).get_content()
+    assert "Super Mario Bros. Wonder" in plain
+    assert "NINTENDO EM DESTAQUE" in html
+    assert "Ver oferta na eShop" in html
+    assert "https://www.nintendo.com/" in html
+    assert "R$ 199,90" in html
+    assert "Crítica" in html
+
+
+def test_email_delivery_summary_reports_sent_vs_no_alerts(tmp_path, monkeypatch):
+    from radar.main import write_delivery_summary
+    destination = tmp_path / "step-summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(destination))
+    write_delivery_summary(
+        mode="Automático", status="não enviado", count=0,
+        reason="Ofertas já conhecidas, sem queda adicional de preço."
+    )
+    write_delivery_summary(
+        mode="Prévia", status="aceito pelo servidor SMTP", count=7,
+        reason="Histórico preservado."
+    )
+    summary = destination.read_text(encoding="utf-8")
+    assert "não enviado" in summary
+    assert "aceito pelo servidor SMTP" in summary
+    assert "Ofertas no e-mail: **7**" in summary
+    assert "Ofertas já conhecidas" in summary
