@@ -867,3 +867,84 @@ def test_official_sales_list_pagination_and_brazil_region():
     assert stats["pages"] == 1
     assert client.calls[0][0] == "https://ec.nintendo.com/api/BR/pt/search/sales"
     assert client.calls[0][1]["params"] == {"count": 50, "offset": 0}
+
+
+
+def test_guest_prices_brazil_nested_active_discount_and_rejections():
+    from radar.nintendo_catalog import CatalogProduct, parse_guest_prices
+    from datetime import timezone
+    product = CatalogProduct(
+        "Super Mario Bros. Wonder", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/"
+    )
+    data = [{
+        "id": 70010000012345, "sales_status": "onsale",
+        "price": {
+            "regular_price": {"raw_value": "299.90", "currency": "BRL"},
+            "discount_price": {"raw_value": "149.95", "currency": "BRL",
+                               "start_datetime": "2026-11-01T00:00:00Z",
+                               "end_datetime": "2026-11-12T23:00:00Z"}
+        }
+    }]
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    values = {product.title: product}
+    offers = parse_guest_prices(data, values, now)
+    assert len(offers) == 1
+    assert offers[0].current == Decimal("149.95")
+    assert offers[0].regular == Decimal("299.90")
+    assert offers[0].discount == 50
+    assert parse_guest_prices(data, values, datetime(2026, 11, 14, tzinfo=timezone.utc)) == []
+    assert parse_guest_prices([{
+        **data[0], "price": {**data[0]["price"],
+                            "discount_price": {"raw_value": "149.95", "currency": "USD"}}
+    }], values, now) == []
+    assert parse_guest_prices([{
+        **data[0], "price": {"regular_price": {"raw_value": "299.90", "currency": "BRL"},
+                            "discount_price": None}
+    }], values, now) == []
+    with pytest.raises(ValueError, match="lista"):
+        parse_guest_prices({"prices": data}, values, now)
+
+
+def test_guest_prices_uses_repeated_ns_uids_and_recovers_failing_batch():
+    from radar.nintendo_catalog import CatalogProduct, fetch_guest_prices
+    game1 = CatalogProduct(
+        "Metroid Dread", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/metroid-dread-switch/")
+    game2 = CatalogProduct(
+        "Mario Kart 8 Deluxe", "70010000012346",
+        "https://www.nintendo.com/pt-br/store/products/mario-kart-8-deluxe-switch/")
+    data = [{
+        "id": "70010000012345", "price": {
+            "regular_price": {"raw_value": "299.90", "currency": "BRL"},
+            "discount_price": {"raw_value": "149.95", "currency": "BRL"}
+        }
+    }]
+    class Response:
+        def __init__(self, url, body):
+            self.url, self.body = url, body
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return self.body
+    class Session:
+        def __init__(self):
+            self.calls = []
+        def get(self, url, **kw):
+            self.calls.append(kw["params"])
+            assert url == "https://ec.nintendo.com/api/BR/pt/guest_prices"
+            if len(kw["params"]) > 1:
+                return Response(url, {"error": "bad batch"})
+            identifier = kw["params"][0][1]
+            return Response(url, data if identifier == game1.nsuid else [])
+    client = Session()
+    diagnostics = {}
+    results = fetch_guest_prices(
+        client, {game1.title: game1, game2.title: game2},
+        diagnostics=diagnostics)
+    assert len(results) == 1
+    assert results[0].product.title == "Metroid Dread"
+    assert client.calls[0] == [("ns_uids", game1.nsuid),
+                               ("ns_uids", game2.nsuid)]
+    assert diagnostics["batch_failures"] == 1
+    assert diagnostics["individual_failures"] == 0
