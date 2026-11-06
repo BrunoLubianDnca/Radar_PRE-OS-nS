@@ -46,7 +46,7 @@ WATCHED_GAMES = (
 
 def matched_watch_game(title: str) -> str | None:
     """Correspondência exata normalizada, com sufixos de versão bem delimitados."""
-    actual = normalized_title(title)
+    actual = normalized_title(title.replace("™", "").replace("®", ""))
     for wanted in WATCHED_GAMES:
         expected = normalized_title(wanted)
         if actual == expected:
