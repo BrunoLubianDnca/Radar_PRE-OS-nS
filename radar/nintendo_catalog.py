@@ -196,7 +196,7 @@ def fetch_regional_prices(session: requests.Session,
         return []
     ids = ",".join(sorted({p.nsuid for p in products.values()}))
     response = session.get(PRICE_URL,
-                           params={"country": "BR", "ids": ids, "lang": "pt"},
+                           params={"country": "BR", "ids": ids, "lang": "en"},
                            headers={"User-Agent": "RadarSwitchMVP/1.0"},
                            timeout=(10, 25), allow_redirects=False)
     response.raise_for_status()
