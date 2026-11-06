@@ -284,13 +284,13 @@ def qualifies(o: Offer, settings: dict) -> bool:
     # A fonte oficial Nintendo não divulga nota de crítica no cartão.
     # Somente uma oferta real do jogo nominalmente acompanhado pode
     # passar sem essa nota; nunca atribuímos pontuação fictícia.
-    official_watched = (
-        nintendo and o.critic == 0 and o.player_reviews == 0
+    verified_official = (
+        o.critic == 0 and o.player_reviews == 0
         and o.page_url == o.shop_url
         and is_official_product_url(o.shop_url)
-        and matched_watch_game(o.title) is not None
+        and (matched_watch_game(o.title) is not None or is_popular(o.title))
     )
-    if not official_watched and o.critic < settings["min_critic_score"]:
+    if not verified_official and o.critic < settings["min_critic_score"]:
         return False
     # A nota de jogadores só restringe quando a fonte informa amostra
     # de pelo menos min_player_reviews análises.
