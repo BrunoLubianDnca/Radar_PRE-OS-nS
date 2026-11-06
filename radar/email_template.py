@@ -76,7 +76,7 @@ def email_shell(content: str, preview: bool = False) -> str:
           <tr>
             <td class="foot-pad" style="padding:22px 30px;border-top:1px solid #e7ebf1;background-color:#fbfcfe">
               <p style="margin:0 0 6px;font-size:12px;line-height:18px;font-weight:700;color:#34445b">Antes de comprar</p>
-              <p style="margin:0;font-size:11px;line-height:18px;color:#718096">Preços e disponibilidade podem mudar. Confirme as condições na Nintendo eShop. Avaliações e informações: Vale o Jogo.</p>
+              <p style="margin:0;font-size:11px;line-height:18px;color:#718096">Preços e disponibilidade podem mudar. Confirme as condições na Nintendo eShop. Avaliações e informações: Vale o Jogo ou Nintendo eShop, conforme a fonte.</p>
               <p style="margin:12px 0 0;font-size:11px;line-height:17px;color:#8994a4">Radar pessoal de ofertas. Projeto independente, sem afiliação com a Nintendo.</p>
             </td>
           </tr>
@@ -110,6 +110,7 @@ def _offer_card(offer: Offer) -> str:
         'NINTENDO EM DESTAQUE</p>'
         if is_nintendo_priority(offer.title) else ""
     )
+    critic_label = f"Crítica {escape(offer.critic)}/100" if offer.critic else "Crítica não disponível"
     reviews_label = (
         f'{escape(offer.player_positive)}% de avaliações positivas · '
         f'{escape(offer.player_reviews)} análises'
@@ -129,7 +130,7 @@ def _offer_card(offer: Offer) -> str:
           <p style="margin:0 0 11px;font-size:12px;line-height:19px">
             <span style="font-weight:700;color:#147d57">{escape(offer.discount)}% OFF</span>
             <span style="color:#c5cbd5">&nbsp; | &nbsp;</span>
-            <span style="color:#69778b">Crítica {escape(offer.critic)}/100</span>
+            <span style="color:#69778b">{critic_label}</span>
           </p>
           <p style="margin:0 0 12px;font-size:12px;line-height:18px;color:#69778b">{reviews_label}</p>
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate">
@@ -174,7 +175,8 @@ def format_email(offers: list[Offer], max_items: int, *, preview: bool = False) 
         message += _offer_card(offer)
         text_lines += [
             f"{offer.title} — {brl(offer.price)} (antes {brl(offer.old_price)}, -{offer.discount}%)",
-            f"Crítica: {offer.critic}/100 · Jogadores: {offer.player_positive}%",
+            (f"Crítica: {offer.critic}/100" if offer.critic else "Crítica: não disponível") +
+            (f" · Jogadores: {offer.player_positive}%" if offer.player_reviews else " · Jogadores: não disponível"),
             f"Nintendo: {offer.shop_url}", f"Fonte: {offer.page_url}", ""
         ]
 
