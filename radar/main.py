@@ -21,6 +21,7 @@ from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qu
 from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
 from .official_sales import parse_official_sales
+from .nintendo_catalog import fetch_catalog, fetch_regional_prices
 from .nintendo_watch import (create_watch_report, register_candidate,
                              register_result, watch_counts)
 from .email_template import format_email, format_test_email
@@ -262,6 +263,39 @@ def main(argv: list[str] | None = None) -> int:
                          offer.title, money_brl(offer.price), offer.discount)
     except (requests.RequestException, RuntimeError, ValueError) as exc:
         LOG.warning("Catálogo oficial Nintendo indisponível: %s. Continuando com vitrines.", exc)
+
+    # Busca nominal (31 consultas em uma chamada Algolia) + preço direto
+    # pela API regional da Nintendo. Não depende dos 28 cards das vitrines.
+    try:
+        catalog, ambiguous = fetch_catalog(session)
+        LOG.info("Nintendo catálogo BR: %d títulos resolvidos; %d ambíguos",
+                 len(catalog), ambiguous)
+        for title, product in catalog.items():
+            register_candidate(watch_report, title, product.shop_url)
+        price_offers = fetch_regional_prices(session, catalog)
+        LOG.info("Nintendo preços BR: %d ofertas com desconto verificado",
+                 len(price_offers))
+        for value in price_offers:
+            product = value.product
+            offer = Offer(
+                title=product.title, page_url=product.shop_url,
+                shop_url=product.shop_url, price=value.current,
+                old_price=value.regular, discount=value.discount,
+                critic=0, player_positive=0, player_reviews=0,
+            )
+            eligible = qualifies(offer, settings)
+            register_result(watch_report, offer.title, offer.page_url,
+                            parsed=True, eligible=eligible)
+            if eligible:
+                if not any(item.shop_url == offer.shop_url for item in offers):
+                    offers.append(offer)
+                LOG.info("Nintendo preço oficial BR elegível: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+            else:
+                LOG.info("Nintendo preço oficial BR fora dos critérios: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+    except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
+        LOG.warning("Busca nominal/preço Nintendo BR indisponível: %s. Ofertas comuns preservadas.", exc)
 
     # Atualizar contagem incluindo a checagem oficial.
     watch_stats = watch_counts(watch_report)
