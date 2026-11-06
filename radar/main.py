@@ -59,6 +59,21 @@ def money_brl(value) -> str:
     return "R$ " + f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def write_delivery_summary(*, mode: str, status: str, count: int, reason: str) -> None:
+    """Explica no Summary por que o e-mail foi enviado ou não."""
+    destination = os.getenv("GITHUB_STEP_SUMMARY")
+    if not destination:
+        return
+    with open(destination, "a", encoding="utf-8") as file:
+        file.write(
+            "\n## Entrega do Radar\n\n"
+            f"- Modo: **{mode}**\n"
+            f"- Situação: **{status}**\n"
+            f"- Ofertas no e-mail: **{count}**\n"
+            f"- Detalhe: {reason}\n"
+        )
+
+
 def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False, preview: bool = False) -> None:
     required = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_TO"]
     missing = [name for name in required if not os.getenv(name)]
@@ -148,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.test_email:
         email_alert([], 0, test_email=True)
         LOG.info("E-mail de teste aceito pelo SMTP; nenhuma coleta e nenhum estado alterado")
+        write_delivery_summary(mode="Teste SMTP", status="aceito pelo servidor SMTP", count=0,
+                               reason="Confira o recebimento no destinatário configurado; SMTP não confirma a caixa de entrada.")
         return 0
     settings = json.loads((ROOT / "config/settings.json").read_text(encoding="utf-8"))
     state_file = ROOT / "data/state.json"
@@ -313,6 +330,8 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("Nenhuma oferta digital reconhecida: verificar estrutura do site; estado preservado")
     if not offers:
         LOG.info("Nenhum jogo atingiu todos os filtros. Histórico preservado, sem e-mail.")
+        write_delivery_summary(mode="Automático/Prévia", status="não enviado", count=0,
+                               reason="Nenhuma oferta elegível foi encontrada.")
         return 0
     LOG.info("Cobertura Switch: %d/%d | fontes complementares: %d candidatos extras",
              primary_parsed, len(primary_urls), len(urls) - len(primary_urls))
@@ -323,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
         selected = prioritize_email_offers(offers)[:int(settings["max_games_per_email"])]
         email_alert(selected, int(settings["max_games_per_email"]), preview=True)
         LOG.info("Prévia de ofertas enviada, histórico não alterado")
+        write_delivery_summary(mode="Prévia", status="aceito pelo servidor SMTP", count=len(selected),
+                               reason="Repete ofertas atuais, mesmo quando não são novas. Histórico preservado.")
         return 0
     alerts, new_state = select_alerts(offers, state, bootstrap=not args.send_initial)
     LOG.info("Elegíveis: %d | Alertas: %d", len(offers), len(alerts))
@@ -335,6 +356,12 @@ def main(argv: list[str] | None = None) -> int:
         selected = prioritize_email_offers(alerts)[:int(settings["max_games_per_email"])]
         email_alert(selected, int(settings["max_games_per_email"]))
         LOG.info("E-mail aceito pelo SMTP")
+        write_delivery_summary(mode="Automático", status="aceito pelo servidor SMTP", count=len(selected),
+                               reason="Novas promoções ou quedas adicionais de preço. Entrega final depende do provedor.")
+    if not alerts:
+        LOG.info("Nenhuma promoção nova ou redução adicional de preço: nenhum e-mail gerado.")
+        write_delivery_summary(mode="Automático", status="não enviado", count=0,
+                               reason="Ofertas já conhecidas, sem queda adicional de preço.")
     # Só atualiza depois do SMTP concluir, permitindo tentativa posterior se falhar.
     state_file.write_text(json.dumps(new_state, ensure_ascii=False, indent=2, sort_keys=True)
                           + "\n", encoding="utf-8")
