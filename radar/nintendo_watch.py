@@ -75,6 +75,15 @@ def register_candidate(report: dict[str, WatchEntry], title: str, url: str) -> N
         report[name].status = "apareceu; oferta ainda não verificada"
 
 
+def register_catalog_match(report: dict[str, WatchEntry], title: str, url: str) -> None:
+    """Identificado por busca nominal; ainda não significa promoção."""
+    name = matched_watch_game(title)
+    if name in report:
+        entry = report[name]
+        entry.page_url = url
+        entry.status = "localizado no catálogo BR; desconto não confirmado"
+
+
 def register_result(report: dict[str, WatchEntry], title: str, url: str,
                     *, parsed: bool, eligible: bool = False) -> None:
     name = matched_watch_game(title)
