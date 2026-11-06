@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qualifies, select_alerts
 from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
+from .official_sales import parse_official_sales
 from .nintendo_watch import (create_watch_report, register_candidate,
                              register_result, watch_counts)
 from .email_template import format_email, format_test_email
@@ -38,6 +39,19 @@ def fetch(session: requests.Session, url: str) -> str:
     if len(r.content) < 500:
         raise RuntimeError("Resposta HTML incompleta")
     return r.text
+
+
+def fetch_nintendo_sales(session: requests.Session) -> str:
+    """Consulta opcional de ofertas oficiais; falhar não interrompe o Radar."""
+    url = "https://www.nintendo.com/pt-br/store/sales-and-deals/"
+    response = session.get(url, headers=HEADERS, timeout=(8, 18), allow_redirects=True)
+    response.raise_for_status()
+    final = urlparse(response.url)
+    if final.scheme != "https" or final.hostname != "www.nintendo.com":
+        raise RuntimeError("Redirecionamento inesperado na loja Nintendo")
+    if len(response.content) < 500:
+        raise RuntimeError("HTML incompleto na loja Nintendo")
+    return response.text
 
 
 def money_brl(value) -> str:
@@ -220,7 +234,42 @@ def main(argv: list[str] | None = None) -> int:
     for entry in watch_report.values():
         if entry.page_url:
             LOG.info("Nintendo acompanhado: %s => %s", entry.name, entry.status)
+    # Consulta independente ao catálogo oficial de ofertas. Só aproveita
+    # cartões com título, versão Switch e dois preços dentro do mesmo bloco.
+    # Se o site entregar apenas o shell JS, fica sem resultados e sem inventar.
+    try:
+        official_html = fetch_nintendo_sales(session)
+        official_sales = parse_official_sales(official_html)
+        LOG.info("Ofertas oficiais Nintendo verificadas em HTML: %d", len(official_sales))
+        for sale in official_sales:
+            offer = Offer(
+                title=sale.watched_title, page_url=sale.product_url,
+                shop_url=sale.product_url, price=sale.price,
+                old_price=sale.old_price, discount=sale.discount,
+                critic=0, player_positive=0, player_reviews=0
+            )
+            approved = qualifies(offer, settings)
+            register_result(watch_report, offer.title, offer.page_url,
+                            parsed=True, eligible=approved)
+            if approved:
+                # Não duplicar se a mesma URL oficial já estiver em ofertas.
+                if not any(o.shop_url == offer.shop_url for o in offers):
+                    offers.append(offer)
+                LOG.info("Nintendo oficial elegível: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+            else:
+                LOG.info("Nintendo oficial fora dos critérios: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        LOG.warning("Catálogo oficial Nintendo indisponível: %s. Continuando com vitrines.", exc)
+
+    # Atualizar contagem incluindo a checagem oficial.
+    watch_stats = watch_counts(watch_report)
+    LOG.info("Nintendo verificação final: acompanhados=%d encontrados=%d elegíveis=%d",
+             watch_stats["acompanhados"], watch_stats["encontrados"], watch_stats["elegiveis"])
+    # O resumo deve refletir os dados das duas fontes.
     write_watch_summary(watch_report, os.getenv("GITHUB_STEP_SUMMARY"))
+
     # Não grave o estado se parte da vitrine estiver indisponível: evita falsos
     # avisos de 'promoção nova' quando a página se recuperar.
     LOG.info("Resumo: candidatos=%d, interpretados=%d, sem dados=%d, elegíveis=%d, erros HTTP=%d", len(urls), parsed_count, discarded_count, len(offers), failed)
