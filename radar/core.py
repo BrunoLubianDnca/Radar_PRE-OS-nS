@@ -212,6 +212,17 @@ def parse_detail(html: str, page_url: str) -> Offer | None:
     if not all(0 <= score <= 100 for score in (critic, positive)):
         return None
 
+    # O CTA deve seguir a oferta Switch identificada, antes de qualquer
+    # bloco de PC, Xbox, PlayStation ou Switch 2. Um link Nintendo isolado
+    # em outra parte da ficha não comprova o preço encontrado.
+    purchase_marker = snippet.find("Ver na eShop")
+    if purchase_marker < 0 or re.search(
+        r"(?:PC|Xbox|PS[45]|PlayStation|Switch\\s*2)\\s+digital",
+        snippet[:purchase_marker], re.I
+    ):
+        log.warning("CTA eShop fora da oferta Switch: %s", page_url)
+        return None
+
     # A página pode trazer outros links para Nintendo; exigir contexto da oferta.
     shop_url = ""
     for anchor in soup.select("a[href]"):
