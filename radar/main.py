@@ -21,7 +21,7 @@ from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qu
 from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
 from .official_sales import parse_official_sales
-from .nintendo_catalog import fetch_catalog, fetch_regional_prices
+from .nintendo_catalog import fetch_catalog, fetch_store_deals, fetch_regional_prices
 from .nintendo_watch import (create_watch_report, register_candidate,
                              register_catalog_match, register_result, watch_counts)
 from .email_template import format_email, format_test_email
@@ -322,6 +322,39 @@ def main(argv: list[str] | None = None) -> int:
                          offer.title, money_brl(offer.price), offer.discount)
     except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
         LOG.warning("Busca nominal/preço Nintendo BR indisponível: %s. Ofertas comuns preservadas.", exc)
+
+    # Buscar jogos da seleção "Todas as ofertas" da Nintendo Brasil
+    # pelo índice utilizado pelo catálogo da loja. Só confirma promoções
+    # após cruzar cada NSUID com o endpoint regional de preços BR.
+    try:
+        deal_catalog, deal_stats = fetch_store_deals(session)
+        LOG.info("Nintendo vitrine oficial Deals: páginas=%d resultados=%d jogos acompanhados=%d",
+                 deal_stats["pages"], deal_stats["hits"], deal_stats["matches"])
+        if not deal_catalog:
+            LOG.warning("Nintendo Deals sem correspondência: campos disponíveis no índice=%s",
+                        ", ".join(deal_stats["fields"]))
+        for name, product in deal_catalog.items():
+            if watch_report[name].status != "oferta elegível":
+                register_catalog_match(watch_report, name, product.shop_url)
+        verified_deals = fetch_regional_prices(session, deal_catalog)
+        LOG.info("Nintendo vitrine Deals: %d promoções BRL confirmadas", len(verified_deals))
+        for value in verified_deals:
+            product = value.product
+            offer = Offer(
+                title=product.title, page_url=product.shop_url,
+                shop_url=product.shop_url, price=value.current,
+                old_price=value.regular, discount=value.discount,
+                critic=0, player_positive=0, player_reviews=0
+            )
+            approved = qualifies(offer, settings)
+            register_result(watch_report, offer.title, offer.page_url,
+                            parsed=True, eligible=approved)
+            if approved and not any(o.shop_url == offer.shop_url for o in offers):
+                offers.append(offer)
+                LOG.info("Nintendo Deals elegível: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+    except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
+        LOG.warning("Nintendo vitrine Deals: erro na API %s; fontes auxiliares preservadas.", exc)
 
     # Atualizar contagem incluindo a checagem oficial.
     watch_stats = watch_counts(watch_report)
