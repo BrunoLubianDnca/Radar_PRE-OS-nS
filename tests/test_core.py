@@ -833,3 +833,37 @@ def test_official_deals_include_known_third_party_without_fake_reviews():
     assert qualifies(official, cfg)
     assert not qualifies(Offer(**{**official.__dict__,
                          "page_url": "https://valeojogo.com.br/jogo/test/"}), cfg)
+
+
+
+def test_regional_price_prefers_raw_value_over_formatted_amount():
+    from radar.nintendo_catalog import _brl_amount
+    assert _brl_amount({
+        "currency": "BRL", "amount": "R$ 149,90", "raw_value": "149.90"
+    }) == Decimal("149.90")
+    assert _brl_amount({
+        "currency": "USD", "amount": "$149.90", "raw_value": "149.90"
+    }) is None
+
+
+def test_official_sales_list_pagination_and_brazil_region():
+    from radar.nintendo_catalog import fetch_official_sales_list
+    class Result:
+        def __init__(self, url):
+            self.url = url
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"contents": [{"id": 70010000012345}], "total": 1}
+    class Session:
+        def __init__(self):
+            self.calls = []
+        def get(self, url, **kw):
+            self.calls.append((url, kw))
+            return Result(url + "?count=50&offset=0")
+    client = Session()
+    games, stats = fetch_official_sales_list(client)
+    assert len(games) == 1 and stats["items"] == 1
+    assert stats["pages"] == 1
+    assert client.calls[0][0] == "https://ec.nintendo.com/api/BR/pt/search/sales"
+    assert client.calls[0][1]["params"] == {"count": 50, "offset": 0}
