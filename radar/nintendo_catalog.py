@@ -227,6 +227,31 @@ def fetch_store_deals(session: requests.Session, pages: int = 2) -> tuple[dict[s
     return found, stats
 
 
+def price_response_diagnostics(payload: dict, products: dict[str, CatalogProduct]) -> dict:
+    """Diagnostica preços sem expor valores não verificados ou credenciais."""
+    if not isinstance(payload, dict):
+        return {"error": "resposta não é objeto"}
+    rows = payload.get("prices")
+    if not isinstance(rows, list):
+        return {"error": "prices ausente ou não é lista", "fields": sorted(payload)[:15]}
+    ids = {p.nsuid for p in products.values()}
+    relevant = [r for r in rows if isinstance(r, dict) and
+                str(r.get("title_id", "")) in ids]
+    return {
+        "api_rows": len(rows),
+        "ids_solicitados": len(ids),
+        "ids_reconhecidos": len(relevant),
+        "com_preco_normal": sum(isinstance(r.get("regular_price"), dict) for r in relevant),
+        "com_preco_promocional": sum(isinstance(r.get("discount_price"), dict) for r in relevant),
+        "com_preco_BRL": sum(_brl_amount(r.get("discount_price")) is not None for r in relevant),
+        "statuses": sorted({str(r.get("sales_status", "")) for r in relevant})[:8],
+        "price_fields": sorted({k for r in relevant[:2] for k in r.keys()})[:15],
+        "sale_fields": sorted({k for r in relevant[:2]
+                               if isinstance(r.get("discount_price"), dict)
+                               for k in r["discount_price"].keys()})[:15],
+    }
+
+
 def _brl_amount(raw: object) -> Decimal | None:
     if not isinstance(raw, dict) or raw.get("currency") != "BRL":
         return None
@@ -299,7 +324,8 @@ def parse_regional_prices(payload: dict, products: dict[str, CatalogProduct],
 
 
 def fetch_regional_prices(session: requests.Session,
-                          products: dict[str, CatalogProduct]) -> list[VerifiedPrice]:
+                          products: dict[str, CatalogProduct],
+                          diagnostics: dict | None = None) -> list[VerifiedPrice]:
     if not products:
         return []
     ids = ",".join(sorted({p.nsuid for p in products.values()}))
@@ -311,4 +337,7 @@ def fetch_regional_prices(session: requests.Session,
     parts = urlparse(response.url)
     if parts.scheme != "https" or parts.hostname != "api.ec.nintendo.com":
         raise ValueError("Redirecionamento inesperado na API Nintendo")
-    return parse_regional_prices(response.json(), products)
+    payload = response.json()
+    if diagnostics is not None:
+        diagnostics.update(price_response_diagnostics(payload, products))
+    return parse_regional_prices(payload, products)
