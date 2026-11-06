@@ -686,20 +686,20 @@ def test_official_sales_page_is_consulted_first_even_if_other_source_fails(monke
 
 def test_official_deals_index_fetches_page_and_uses_brl_confirmation():
     from radar.nintendo_catalog import fetch_store_deals, CatalogProduct
-    endpoint = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries"
+    endpoint = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/store_all_products_pt_br/query"
     class Response:
         url = endpoint
         def raise_for_status(self):
             return None
         def json(self):
-            return {"results": [{"hits": [
+            return {"hits": [
                 {"title": "Super Mario Bros. Wonder",
                  "nsuid": "70010000068688",
                  "url": "/store/products/super-mario-bros-wonder-switch/"},
                 {"title": "Unrelated Indie Game",
                  "nsuid": "70010000011111",
                  "url": "/store/products/unrelated-indie-game-switch/"},
-            ]}]}
+            ]}
     class Session:
         def __init__(self):
             self.calls = []
@@ -710,15 +710,65 @@ def test_official_deals_index_fetches_page_and_uses_brl_confirmation():
     games, stats = fetch_store_deals(session, pages=3)
     assert len(session.calls) == 1
     assert session.calls[0][0] == endpoint
-    params = session.calls[0][1]["json"]["requests"][0]
-    assert params["indexName"] == "store_all_products_pt_br"
-    assert "Deals" in params["params"]
+    params = session.calls[0][1]["json"]
+    assert "Deals" in params["filters"]
     assert stats["hits"] == 2
     assert stats["matches"] == 1
     assert games["Super Mario Bros. Wonder"] == CatalogProduct(
         "Super Mario Bros. Wonder", "70010000068688",
         "https://www.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/"
     )
+
+
+def test_official_deals_facet_probe_explains_empty_results():
+    from radar.nintendo_catalog import fetch_store_deals
+    endpoint = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/store_all_products_pt_br/query"
+    class Response:
+        url = endpoint
+        def __init__(self, hits):
+            self.hits = hits
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {"hits": self.hits}
+    class Session:
+        def post(self, url, **kwargs):
+            return Response([] if "filters" in kwargs["json"] else [{"title": "Teste"}])
+    games, stats = fetch_store_deals(Session())
+    assert not games
+    assert stats["hits"] == 0
+    assert stats["unfiltered_hits"] == 1
+    assert stats["facet_unavailable"] is True
+
+
+def test_price_diagnostics_explain_no_active_discount():
+    from radar.nintendo_catalog import CatalogProduct, price_response_diagnostics
+    game = CatalogProduct(
+        "Metroid Dread", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/metroid-dread-switch/")
+    result = price_response_diagnostics({"country": "BR", "prices": [{
+        "title_id": 70010000012345, "sales_status": "onsale",
+        "regular_price": {"amount": "299.00", "currency": "BRL"},
+        "discount_price": None,
+    }]}, {"Metroid Dread": game})
+    assert result["api_rows"] == 1
+    assert result["ids_reconhecidos"] == 1
+    assert result["com_preco_normal"] == 1
+    assert result["com_preco_promocional"] == 0
+    assert result["com_preco_BRL"] == 0
+
+
+def test_sales_listing_matches_only_known_nintendo_nsuids():
+    from radar.nintendo_catalog import CatalogProduct, match_official_sales_ids
+    p = CatalogProduct(
+        "Kirby and the Forgotten Land", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/kirby-and-the-forgotten-land-switch/"
+    )
+    matches = match_official_sales_ids(
+        [{"id": 70010000012345}, {"id": 70010000055555}],
+        {p.title: p})
+    assert matches == {p.title: p}
+
 
 
 def test_nintendo_brl_price_accepts_official_raw_value_without_country_field():
