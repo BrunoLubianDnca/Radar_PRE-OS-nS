@@ -13,6 +13,10 @@
   "source_urls": [
     "https://valeojogo.com.br/promocoes/switch/",
     "https://valeojogo.com.br/promocoes/jogos-baratos-switch/",
-    "https://valeojogo.com.br/promocoes/bem-avaliados/"
-  ]
+    "https://valeojogo.com.br/promocoes/bem-avaliados/",
+    "https://valeojogo.com.br/promocoes/nintendo/"
+  ],
+  "nintendo_priority_enabled": true,
+  "nintendo_max_price_brl": 250,
+  "nintendo_min_discount_percent": 15
 }
