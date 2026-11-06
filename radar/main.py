@@ -22,7 +22,7 @@ from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
 from .official_sales import parse_official_sales
 from .nintendo_catalog import (fetch_catalog, fetch_store_deals, fetch_regional_prices,
-                              fetch_official_sales_list, match_official_sales_ids)
+                              fetch_official_sales_list, match_official_sales_ids, fetch_guest_prices)
 from .nintendo_watch import (create_watch_report, register_candidate,
                              register_catalog_match, register_result, watch_counts)
 from .email_template import format_email, format_test_email
@@ -390,6 +390,32 @@ def main(argv: list[str] | None = None) -> int:
                          offer.title, money_brl(offer.price), offer.discount)
     except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
         LOG.warning("Nintendo lista de descontos eShop BR indisponível: %s", exc)
+
+    # API utilizada pelo eShop Brasil Tracker: preços aninhados em "price",
+    # método independente dos endpoints anteriores e prioritário na validação.
+    try:
+        valid_catalog = catalog if "catalog" in locals() else {}
+        guest_details = {}
+        confirmed_guest = fetch_guest_prices(session, valid_catalog, diagnostics=guest_details)
+        LOG.info("Nintendo guest_prices BR: diagnóstico=%s; ofertas verificadas=%d",
+                 guest_details, len(confirmed_guest))
+        for value in confirmed_guest:
+            product = value.product
+            offer = Offer(
+                title=product.title, page_url=product.shop_url,
+                shop_url=product.shop_url, price=value.current,
+                old_price=value.regular, discount=value.discount,
+                critic=0, player_positive=0, player_reviews=0,
+            )
+            good = qualifies(offer, settings)
+            register_result(watch_report, offer.title, offer.page_url,
+                            parsed=True, eligible=good)
+            if good and not any(o.shop_url == offer.shop_url for o in offers):
+                offers.append(offer)
+                LOG.info("Nintendo guest_prices elegível: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+    except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
+        LOG.warning("Nintendo guest_prices BR indisponível: %s. Estado preservado.", exc)
 
     # Atualizar contagem incluindo a checagem oficial.
     watch_stats = watch_counts(watch_report)
