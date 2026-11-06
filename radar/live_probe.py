@@ -53,6 +53,29 @@ def run() -> int:
         for row in latest_rows
     )
     LOG.info("API regional v1/price: preços regulares BRL=%d", latest_regular)
+    # Preços efetivamente retornados pela Nintendo, incluindo jogos sem desconto.
+    by_nsuid = {p.nsuid: p for p in products}
+    price_table = []
+    for row in latest_rows:
+        if not isinstance(row, dict):
+            continue
+        product = by_nsuid.get(str(row.get("title_id")))
+        if product is None:
+            continue
+        regular = _brl_amount(row.get("regular_price"))
+        promotional = _brl_amount(row.get("discount_price"))
+        if regular is None:
+            continue
+        actual = promotional if promotional is not None and promotional < regular else regular
+        pct = round((regular - actual) / regular * 100) if regular else 0
+        def brl(v):
+            return "R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        price_table.append((product.title, brl(actual), brl(regular),
+                            pct, product.shop_url))
+    for title, current, regular, discount, official_url in sorted(price_table):
+        LOG.info("PREÇO NINTENDO BR: %s | %s | normal %s | -%d%% | %s",
+                 title, current, regular, discount, official_url)
+
     regular_found = 0
     valid_responses = 0
     sale_count = 0
@@ -90,6 +113,12 @@ def run() -> int:
         with open(summary, "a", encoding="utf-8") as file:
             file.write("\n## Teste real Nintendo eShop BR\n\n")
             file.write(f"- Títulos resolvidos: {len(catalog)}/{len(samples)}\n")
+            file.write("\n| Jogo | Preço atual | Preço normal | Desconto | Loja oficial |\n")
+            file.write("|---|---:|---:|---:|---|\n")
+            for title, current, regular, discount, official_url in sorted(price_table):
+                safe_title = title.replace("|", " ")
+                file.write(f"| {safe_title} | {current} | {regular} | {discount}% | [Nintendo]({official_url}) |\n")
+
             file.write(f"- Respostas individuais válidas: {valid_responses}\n")
             file.write(f"- Preços normais confirmados em BRL: {regular_found}\n")
             file.write(f"- Promoções ativas verificadas: {sale_count}\n")
