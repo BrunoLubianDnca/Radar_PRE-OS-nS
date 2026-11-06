@@ -10,6 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from .core import BR, Offer
+from .nintendo import is_nintendo_priority
 
 
 def brl(value: Decimal) -> str:
@@ -68,7 +69,7 @@ def email_shell(content: str, preview: bool = False) -> str:
                 </tr>
               </table>
               <h1 style="margin:27px 0 8px;font-size:26px;line-height:32px;font-weight:700;letter-spacing:-0.6px;color:#101c2e">{escape(title)}</h1>
-              <p style="margin:0;font-size:13px;line-height:20px;color:#657287">Jogos digitais até R$ 100, com descontos de 30% a 90%.</p>
+              <p style="margin:0;font-size:13px;line-height:20px;color:#657287">Jogos digitais do Switch em promoção. Seleção especial Nintendo e ofertas populares.</p>
             </td>
           </tr>
           <tr><td class="body-pad" style="padding:26px 30px 15px">{content}</td></tr>
@@ -103,11 +104,23 @@ def _offer_card(offer: Offer) -> str:
             'Nintendo<br>Switch</td></tr></table>'
         )
 
+    nintendo_label = (
+        '<p style="margin:0 0 8px;font-size:10px;line-height:15px;'
+        'font-weight:700;letter-spacing:.4px;color:#1b4f98">'
+        'NINTENDO EM DESTAQUE</p>'
+        if is_nintendo_priority(offer.title) else ""
+    )
+    reviews_label = (
+        f'{escape(offer.player_positive)}% de avaliações positivas · '
+        f'{escape(offer.player_reviews)} análises'
+        if offer.player_reviews else "Avaliações de jogadores não disponíveis"
+    )
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border:1px solid #e2e8f0;background-color:#ffffff;margin:0 0 12px">
       <tr>
         <td class="image-cell" width="96" valign="top" style="width:96px;padding:17px 13px 17px 17px">{image}</td>
         <td class="details-cell" valign="top" style="padding:17px 17px 17px 0">
+          {nintendo_label}
           <p class="game-title" style="margin:0 0 9px;font-size:16px;line-height:22px;font-weight:700;color:#152033">{escape(offer.title)}</p>
           <p style="margin:0 0 8px;line-height:26px">
             <span class="price" style="font-size:23px;line-height:27px;font-weight:700;color:#152033;white-space:nowrap">{escape(brl(offer.price))}</span>
@@ -118,7 +131,7 @@ def _offer_card(offer: Offer) -> str:
             <span style="color:#c5cbd5">&nbsp; | &nbsp;</span>
             <span style="color:#69778b">Crítica {escape(offer.critic)}/100</span>
           </p>
-          <p style="margin:0 0 12px;font-size:12px;line-height:18px;color:#69778b">{escape(offer.player_positive)}% de avaliações positivas · {escape(offer.player_reviews)} análises</p>
+          <p style="margin:0 0 12px;font-size:12px;line-height:18px;color:#69778b">{reviews_label}</p>
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate">
             <tr><td bgcolor="#1b4f98" style="background-color:#1b4f98;padding:10px 13px">
               <a class="action-link" href="{escape(offer.shop_url)}" target="_blank" style="display:inline-block;color:#ffffff;font-size:12px;line-height:17px;font-weight:700;text-decoration:none">Ver oferta na eShop</a>
