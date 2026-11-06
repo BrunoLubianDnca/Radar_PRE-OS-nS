@@ -20,6 +20,8 @@ from bs4 import BeautifulSoup
 from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qualifies, select_alerts
 from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
+from .nintendo_watch import (create_watch_report, register_candidate,
+                             register_result, watch_counts)
 from .email_template import format_email, format_test_email
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +101,28 @@ def prioritize_email_offers(offers: list[Offer]) -> list[Offer]:
     return rank_offers(first_party) + rank_offers(others)
 
 
+def write_watch_summary(report: dict, output_path: str | None = None) -> str:
+    """Diagnóstico de cada jogo Nintendo; nenhuma oferta é inventada."""
+    counts = watch_counts(report)
+    lines = [
+        "## Acompanhamento Nintendo",
+        "",
+        f"**{counts['acompanhados']} títulos cadastrados** | "
+        f"{counts['encontrados']} encontrados nas vitrines | "
+        f"{counts['elegiveis']} ofertas elegíveis",
+        "",
+        "| Jogo | Situação |",
+        "|---|---|",
+    ]
+    for entry in report.values():
+        lines.append(f"| {entry.name} | {entry.status} |")
+    summary = "\\n".join(lines) + "\\n"
+    if output_path:
+        with open(output_path, "a", encoding="utf-8") as summary_file:
+            summary_file.write(summary)
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Sem SMTP e sem salvar estado")
@@ -118,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     urls = []
     max_pages = max(1, min(int(settings.get("max_listing_pages", 1)), 5))
     primary_urls: set[str] = set()
+    watch_report = create_watch_report()
     for source in sources:
         # Páginas subsequentes só são visitadas se aparecerem como links href
         # no HTML. Botões que dependem de JS não autorizam chutar URLs.
@@ -139,6 +164,11 @@ def main(argv: list[str] | None = None) -> int:
                 break
             visited.add(page_url)
             LOG.info("Vitrine %s: %d candidatos", page_url, len(discovered))
+            for anchor in BeautifulSoup(html_listing, "html.parser").select("a[href]"):
+                from urllib.parse import urljoin
+                possible = urljoin(page_url, anchor.get("href", ""))
+                if possible in discovered:
+                    register_candidate(watch_report, anchor.get_text(" ", strip=True), possible)
             for url in discovered:
                 if url not in urls:
                     urls.append(url)
@@ -162,12 +192,18 @@ def main(argv: list[str] | None = None) -> int:
             game_html = fetch(session, url)
             offer = parse_detail(game_html, url)
             if offer is None:
+                title_node = BeautifulSoup(game_html, "html.parser").find("h1")
+                if title_node:
+                    register_result(watch_report, title_node.get_text(" ", strip=True), url,
+                                    parsed=False)
                 discarded_count += 1
                 continue
             parsed_count += 1
+            eligible = qualifies(offer, settings)
+            register_result(watch_report, offer.title, url, parsed=True, eligible=eligible)
             if url in primary_urls:
                 primary_parsed += 1
-            if qualifies(offer, settings):
+            if eligible:
                 offers.append(offer)
                 relevance, evidence = popularity_evidence(offer.title, offer.critic, offer.player_positive, offer.player_reviews)
                 LOG.info("Elegível%s: %s | %s | -%d%% | relevância editorial %d/100 (%s)", " Nintendo" if is_nintendo_priority(offer.title) else "", offer.title, money_brl(offer.price), offer.discount, relevance, evidence)
@@ -176,6 +212,15 @@ def main(argv: list[str] | None = None) -> int:
         except (requests.RequestException, RuntimeError, ValueError) as exc:
             failed += 1
             LOG.warning("Falha na página %s: %s", url, exc)
+    watch_stats = watch_counts(watch_report)
+    LOG.info("Nintendo acompanhado: cadastrados=%d, vistos=%d, elegíveis=%d, não encontrados=%d, sem oferta verificável=%d, fora dos critérios=%d",
+             watch_stats["acompanhados"], watch_stats["encontrados"],
+             watch_stats["elegiveis"], watch_stats["nao_encontrados"],
+             watch_stats["sem_oferta_verificavel"], watch_stats["fora_criterios"])
+    for entry in watch_report.values():
+        if entry.page_url:
+            LOG.info("Nintendo acompanhado: %s => %s", entry.name, entry.status)
+    write_watch_summary(watch_report, os.getenv("GITHUB_STEP_SUMMARY"))
     # Não grave o estado se parte da vitrine estiver indisponível: evita falsos
     # avisos de 'promoção nova' quando a página se recuperar.
     LOG.info("Resumo: candidatos=%d, interpretados=%d, sem dados=%d, elegíveis=%d, erros HTTP=%d", len(urls), parsed_count, discarded_count, len(offers), failed)
