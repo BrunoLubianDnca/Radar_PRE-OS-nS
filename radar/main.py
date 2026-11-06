@@ -116,7 +116,7 @@ def write_watch_summary(report: dict, output_path: str | None = None) -> str:
     ]
     for entry in report.values():
         lines.append(f"| {entry.name} | {entry.status} |")
-    summary = "\\n".join(lines) + "\\n"
+    summary = "\n".join(lines) + "\n"
     if output_path:
         with open(output_path, "a", encoding="utf-8") as summary_file:
             summary_file.write(summary)
