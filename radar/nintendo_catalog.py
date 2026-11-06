@@ -61,8 +61,13 @@ def _product_url(hit: dict) -> str:
         raw = hit.get(field)
         if not isinstance(raw, str):
             continue
-        url = ("https://www.nintendo.com" + raw
-               if raw.startswith("/pt-br/store/products/") else raw)
+        if raw.startswith("/pt-br/store/products/"):
+            url = "https://www.nintendo.com" + raw
+        elif raw.startswith("/store/products/"):
+            # Mesmo slug oficial do índice brasileiro; URL localizada.
+            url = "https://www.nintendo.com/pt-br" + raw
+        else:
+            url = raw
         if is_official_product_url(url):
             return url
     return ""
