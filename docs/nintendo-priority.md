@@ -70,3 +70,7 @@ Fontes técnicas:
 - https://github.com/okou-ai/okou/issues/20611
 - https://opentherank.com/pt/data-sources/
 - https://favna.github.io/nintendo-switch-eshop/api/interfaces/gameus/
+
+## Fonte oficial prioritária
+
+Em todas as execuções de coleta (inclusive prévia), o Radar consulta **primeiro** https://www.nintendo.com/pt-br/store/sales-and-deals/. O HTML é consultado uma única vez por ciclo e, se tiver cartões completos com preço e link oficial, essas ofertas são aproveitadas. O catálogo regional e a API de preços Nintendo BR complementam a identificação e a confirmação dos preços. Vitrines de terceiros são fontes auxiliares, não substituem preço verificável da eShop. Se a página oficial não apresentar os dados no HTML (carregamento JS), o log informa isso e os alertas comuns permanecem ativos; consultar a página não garante descoberta de todos os jogos. A execução de teste SMTP --test-email não consulta jogos por definição.
