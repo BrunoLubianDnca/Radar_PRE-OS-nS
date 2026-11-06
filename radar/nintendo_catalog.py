@@ -252,6 +252,56 @@ def price_response_diagnostics(payload: dict, products: dict[str, CatalogProduct
     }
 
 
+OFFICIAL_SALES_API = "https://ec.nintendo.com/api/BR/pt/search/sales"
+
+
+def fetch_official_sales_list(session: requests.Session, max_pages: int = 3
+                              ) -> tuple[list[dict], dict]:
+    """Catálogo de ofertas eShop BR; endpoint antigo, disponibilidade incerta.
+
+    Usamos apenas NSUIDs que possam ser ligados com segurança a um jogo
+    e posteriormente confirmados na API regional de preços.
+    """
+    collected: list[dict] = []
+    stats = {"pages": 0, "items": 0, "total": None, "fields": []}
+    for page in range(max(1, min(max_pages, 5))):
+        resp = session.get(
+            OFFICIAL_SALES_API, params={"count": 50, "offset": 50 * page},
+            headers={"User-Agent": "RadarSwitchMVP/1.0"},
+            timeout=(8, 20), allow_redirects=False,
+        )
+        resp.raise_for_status()
+        target = urlparse(resp.url)
+        if target.scheme != "https" or target.hostname != "ec.nintendo.com":
+            raise ValueError("Redirecionamento não autorizado na lista de ofertas")
+        data = resp.json()
+        if not isinstance(data, dict) or not isinstance(data.get("contents"), list):
+            raise ValueError("Formato inesperado na lista oficial de ofertas")
+        entries = data["contents"]
+        stats["pages"] += 1
+        stats["items"] += len(entries)
+        stats["total"] = data.get("total") if isinstance(data.get("total"), int) else None
+        stats["fields"] = sorted({k for item in entries[:3]
+                                   if isinstance(item, dict) for k in item.keys()})[:25]
+        collected.extend(item for item in entries if isinstance(item, dict))
+        if len(entries) < 50:
+            break
+    return collected, stats
+
+
+def match_official_sales_ids(items: list[dict],
+                             catalog: dict[str, CatalogProduct]
+                             ) -> dict[str, CatalogProduct]:
+    """A lista oficial precisa trazer o MESMO NSUID do catálogo validado."""
+    known = {p.nsuid: p for p in catalog.values()}
+    found: dict[str, CatalogProduct] = {}
+    for item in items:
+        identifier = str(item.get("id", ""))
+        if identifier in known:
+            found[known[identifier].title] = known[identifier]
+    return found
+
+
 def _brl_amount(raw: object) -> Decimal | None:
     if not isinstance(raw, dict) or raw.get("currency") != "BRL":
         return None
