@@ -19,7 +19,7 @@ from .official_sales import is_official_product_url
 ALGOLIA_URL = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries"
 ALGOLIA_APP = "U3B6GR4UA3"
 # Chave pública de pesquisa (não credencial de usuário).
-ALGOLIA_SEARCH_KEY = "9a20c93440cf63cf1a7008d75f7438bf"
+ALGOLIA_SEARCH_KEY = "a29c6927638bfd8cee23993e51e721c9"
 PRICE_URL = "https://api.ec.nintendo.com/v1/price"
 NSUID = re.compile(r"^7001\d{10}$")
 
