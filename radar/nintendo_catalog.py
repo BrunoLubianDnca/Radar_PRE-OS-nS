@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 from .nintendo_watch import WATCHED_GAMES, matched_watch_game
+from .popular import is_popular
 from .official_sales import is_official_product_url
 
 ALGOLIA_URL = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries"
@@ -140,6 +141,56 @@ def catalog_diagnostics(payload: dict) -> dict:
     return {"hits": len(hits), "fields": keys[:40]}
 
 
+def _is_original_switch(hit: dict, title: str, url: str) -> bool:
+    """Não confundir a edição Switch original com Switch 2, DLC ou pacote."""
+    if any(phrase in title.casefold() for phrase in (
+        "switch 2 edition", "upgrade pack", "pacote de melhoria", "expansion pass",
+        "season pass", "soundtrack", "trilha sonora"
+    )):
+        return False
+    if not is_official_product_url(url):
+        return False
+    hardware = " ".join(str(hit.get(field) or "") for field in (
+        "platform", "platformCode", "system", "productType"))
+    if "SWITCH_2" in hardware.upper().replace(" ", "_"):
+        return False
+    if "Switch 2" in hardware and "Switch" not in hardware.replace("Switch 2", ""):
+        return False
+    return True
+
+
+def parse_store_deal_hits(payload: dict) -> dict[str, CatalogProduct]:
+    """Seleciona jogos acompanhados OU franquias populares na página Deals."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+        raise ValueError("Resposta Deals inválida")
+    found: dict[str, CatalogProduct] = {}
+    conflicts: set[str] = set()
+    for block in payload["results"]:
+        if not isinstance(block, dict) or not isinstance(block.get("hits"), list):
+            raise ValueError("Resultados Deals inválidos")
+        for hit in block["hits"]:
+            if not isinstance(hit, dict):
+                continue
+            title, identifier = _title_and_id(hit)
+            if not title or not NSUID.fullmatch(identifier):
+                continue
+            url = _product_url(hit)
+            if not _is_original_switch(hit, title, url):
+                continue
+            tracked = matched_watch_game(title)
+            if not tracked and not is_popular(title):
+                continue
+            title = tracked or title
+            candidate = CatalogProduct(title, identifier, url)
+            if title in found and found[title] != candidate:
+                conflicts.add(title)
+            else:
+                found[title] = candidate
+    for name in conflicts:
+        found.pop(name, None)
+    return found
+
+
 def fetch_store_deals(session: requests.Session, pages: int = 2) -> tuple[dict[str, CatalogProduct], dict]:
     """Lê a seleção Deals da mesma base usada pela página oficial de ofertas.
 
@@ -168,7 +219,7 @@ def fetch_store_deals(session: requests.Session, pages: int = 2) -> tuple[dict[s
         stats["hits"] += current["hits"]
         stats["fields"] = current["fields"] or stats["fields"]
         stats["pages"] += 1
-        current_matches, _ = parse_catalog_results(payload)
+        current_matches = parse_store_deal_hits(payload)
         found.update(current_matches)
         if current["hits"] < 80:
             break
