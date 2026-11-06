@@ -144,8 +144,9 @@ def _offer_card(offer: Offer) -> str:
 
 
 def format_email(offers: list[Offer], max_items: int, *, preview: bool = False) -> tuple[str, str]:
-    # Preserva exatamente o critério de ordenação do projeto atual.
-    shown = sorted(offers, key=lambda o: (-o.discount, o.price, -o.critic))[:max_items]
+    # A ordem de prioridade vem do monitoramento (Nintendo em destaque antes).
+    # Não reordenar por desconto: isso apagaria a prioridade da curadoria.
+    shown = offers[:max_items]
     timestamp = datetime.now(BR).strftime("%d/%m/%Y às %H:%M")
     intro = (
         "Prévia solicitada manualmente. Os valores são os da consulta e não representam alertas inéditos."
