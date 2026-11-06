@@ -71,6 +71,19 @@ def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False
         raise ValueError("SMTP_PORT deve ser 465 (SSL) ou 587 (STARTTLS)")
 
 
+def ensure_primary_coverage(primary_count: int, primary_parsed: int) -> None:
+    """Protege a coleta Switch sem contar páginas de outras plataformas.
+
+    A vitrine geral de jogos bem avaliados é complementar: suas páginas de
+    PC/Xbox/PS não são falhas do parser da Nintendo eShop.
+    """
+    if primary_count >= 10 and primary_parsed < primary_count // 3:
+        raise RuntimeError(
+            f"Cobertura Switch insuficiente ({primary_parsed}/{primary_count}); "
+            "histórico preservado"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Sem SMTP e sem salvar estado")
@@ -89,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     sources = settings.get("source_urls") or [settings["source_url"]]
     urls = []
     max_pages = max(1, min(int(settings.get("max_listing_pages", 1)), 5))
+    primary_urls: set[str] = set()
     for source in sources:
         # Páginas subsequentes só são visitadas se aparecerem como links href
         # no HTML. Botões que dependem de JS não autorizam chutar URLs.
@@ -110,11 +124,14 @@ def main(argv: list[str] | None = None) -> int:
             for linked in discover_listing_pages(html_listing, source, max_pages):
                 if linked not in visited and linked not in pending:
                     pending.append(linked)
+        if "/bem-avaliados/" not in source:
+            primary_urls.update(urls)
         LOG.info("Cobertura %s: %d pagina(s) HTML verificadas", source, len(visited))
     LOG.info("Candidatos únicos nas vitrines: %d", len(urls))
     offers: list[Offer] = []
     failed = 0
     parsed_count = 0
+    primary_parsed = 0
     discarded_count = 0
     for i, url in enumerate(urls, 1):
         LOG.info("Analisando %d/%d: %s", i, len(urls), url)
@@ -127,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
                 discarded_count += 1
                 continue
             parsed_count += 1
+            if url in primary_urls:
+                primary_parsed += 1
             if qualifies(offer, settings):
                 offers.append(offer)
                 relevance, evidence = popularity_evidence(offer.title, offer.critic, offer.player_positive, offer.player_reviews)
@@ -146,8 +165,9 @@ def main(argv: list[str] | None = None) -> int:
     if not offers:
         LOG.info("Nenhum jogo atingiu todos os filtros. Histórico preservado, sem e-mail.")
         return 0
-    if len(urls) >= 10 and parsed_count < len(urls) // 3:
-        raise RuntimeError("Cobertura do parser insuficiente; evitar histórico parcial")
+    LOG.info("Cobertura Switch: %d/%d | fontes complementares: %d candidatos extras",
+             primary_parsed, len(primary_urls), len(urls) - len(primary_urls))
+    ensure_primary_coverage(len(primary_urls), primary_parsed)
     if args.preview_email:
         # Escolhe primeiro as ofertas mais relevantes; o template preserva a
         # apresentação visual e ordena por desconto dentro dessa seleção.
