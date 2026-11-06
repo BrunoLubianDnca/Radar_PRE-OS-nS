@@ -33,3 +33,5 @@ jobs:
         run: python -m pytest -q
       - name: Verificar API Nintendo BR com preços reais (sem enviar e-mail)
         run: python -m radar.live_probe
+      - name: Testar coleta completa sem enviar e-mail nem alterar histórico
+        run: python -m radar.main --dry-run
