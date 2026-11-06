@@ -16,6 +16,8 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 from .popular import is_popular
 from .nintendo import is_nintendo_priority
+from .nintendo_watch import matched_watch_game
+from .official_sales import is_official_product_url
 
 BR = ZoneInfo("America/Sao_Paulo")
 MONEY = r"R\$\s*([\d.]+,\d{2})"
@@ -279,7 +281,16 @@ def qualifies(o: Offer, settings: dict) -> bool:
         return False
     if settings.get("popular_only", False) and not (nintendo or is_popular(o.title)):
         return False
-    if o.critic < settings["min_critic_score"]:
+    # A fonte oficial Nintendo não divulga nota de crítica no cartão.
+    # Somente uma oferta real do jogo nominalmente acompanhado pode
+    # passar sem essa nota; nunca atribuímos pontuação fictícia.
+    official_watched = (
+        nintendo and o.critic == 0 and o.player_reviews == 0
+        and o.page_url == o.shop_url
+        and is_official_product_url(o.shop_url)
+        and matched_watch_game(o.title) is not None
+    )
+    if not official_watched and o.critic < settings["min_critic_score"]:
         return False
     # A nota de jogadores só restringe quando a fonte informa amostra
     # de pelo menos min_player_reviews análises.
