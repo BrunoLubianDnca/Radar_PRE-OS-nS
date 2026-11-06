@@ -21,7 +21,8 @@ from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qu
 from .popular import popularity_evidence, rank_offers
 from .nintendo import is_nintendo_priority
 from .official_sales import parse_official_sales
-from .nintendo_catalog import fetch_catalog, fetch_store_deals, fetch_regional_prices
+from .nintendo_catalog import (fetch_catalog, fetch_store_deals, fetch_regional_prices,
+                              fetch_official_sales_list, match_official_sales_ids)
 from .nintendo_watch import (create_watch_report, register_candidate,
                              register_catalog_match, register_result, watch_counts)
 from .email_template import format_email, format_test_email
@@ -298,9 +299,10 @@ def main(argv: list[str] | None = None) -> int:
                  len(catalog), ambiguous)
         for title, product in catalog.items():
             register_catalog_match(watch_report, title, product.shop_url)
-        price_offers = fetch_regional_prices(session, catalog)
-        LOG.info("Nintendo preços BR: %d ofertas com desconto verificado",
-                 len(price_offers))
+        price_diagnostics = {}
+        price_offers = fetch_regional_prices(session, catalog, diagnostics=price_diagnostics)
+        LOG.info("Nintendo preços BR: %d ofertas com desconto verificado; diagnóstico=%s",
+                 len(price_offers), price_diagnostics)
         for value in price_offers:
             product = value.product
             offer = Offer(
@@ -331,7 +333,9 @@ def main(argv: list[str] | None = None) -> int:
         LOG.info("Nintendo vitrine oficial Deals: páginas=%d resultados=%d jogos acompanhados=%d",
                  deal_stats["pages"], deal_stats["hits"], deal_stats["matches"])
         if not deal_catalog:
-            LOG.warning("Nintendo Deals sem correspondência: campos disponíveis no índice=%s",
+            LOG.warning("Nintendo Deals sem correspondência: filtros indisponíveis=%s, " 
+                        "sondagem sem filtro=%s, campos do índice=%s",
+                        deal_stats.get("facet_unavailable"), deal_stats.get("unfiltered_hits"),
                         ", ".join(deal_stats["fields"]))
         for name, product in deal_catalog.items():
             if name in watch_report and watch_report[name].status != "oferta elegível":
@@ -355,6 +359,37 @@ def main(argv: list[str] | None = None) -> int:
                          offer.title, money_brl(offer.price), offer.discount)
     except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
         LOG.warning("Nintendo vitrine Deals: erro na API %s; fontes auxiliares preservadas.", exc)
+
+    # Endpoint de vendas eShop BR independente do filtro Algolia Deals.
+    # Só aceita NSUIDs existentes na busca nominal e preços BRL confirmados.
+    try:
+        listed, sales_stats = fetch_official_sales_list(session)
+        LOG.info("Nintendo lista de ofertas eShop BR: páginas=%s itens=%s total=%s campos=%s",
+                 sales_stats["pages"], sales_stats["items"], sales_stats["total"],
+                 sales_stats["fields"])
+        # Usar catálogo nominal já validado se disponível; qualquer falha
+        # na primeira busca foi isolada e não gera correspondência fictícia.
+        matched = match_official_sales_ids(listed, catalog if "catalog" in locals() else {})
+        LOG.info("Nintendo lista oficial: %d títulos acompanhados cruzados por NSUID", len(matched))
+        listed_diagnostics = {}
+        listed_sales = fetch_regional_prices(session, matched, diagnostics=listed_diagnostics)
+        if matched:
+            LOG.info("Nintendo lista oficial preços BR: %s", listed_diagnostics)
+        for value in listed_sales:
+            p = value.product
+            offer = Offer(title=p.title, page_url=p.shop_url,
+                          shop_url=p.shop_url, price=value.current,
+                          old_price=value.regular, discount=value.discount,
+                          critic=0, player_positive=0, player_reviews=0)
+            valid = qualifies(offer, settings)
+            register_result(watch_report, offer.title, offer.page_url,
+                            parsed=True, eligible=valid)
+            if valid and not any(o.shop_url == offer.shop_url for o in offers):
+                offers.append(offer)
+                LOG.info("Nintendo lista oficial elegível: %s | %s | -%d%%",
+                         offer.title, money_brl(offer.price), offer.discount)
+    except (requests.RequestException, RuntimeError, ValueError, KeyError) as exc:
+        LOG.warning("Nintendo lista de descontos eShop BR indisponível: %s", exc)
 
     # Atualizar contagem incluindo a checagem oficial.
     watch_stats = watch_counts(watch_report)
