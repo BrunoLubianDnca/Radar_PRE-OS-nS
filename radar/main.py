@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 
 from .core import BR, Offer, discovery, discover_listing_pages, parse_detail, qualifies, select_alerts
 from .popular import popularity_evidence, rank_offers
+from .nintendo import is_nintendo_priority
 from .email_template import format_email, format_test_email
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +52,7 @@ def email_alert(offers: list[Offer], max_items: int, *, test_email: bool = False
     msg["To"] = os.environ["EMAIL_TO"]
     msg["Subject"] = ("[Radar Switch] Teste de e-mail — configuração OK" if test_email
                       else (f"[Radar Switch] PRÉVIA — {len(offers)} ofertas encontradas" if preview
-                            else f"[Radar Switch] {len(offers)} promoção(ões) nova(s) até R$ 100"))
+                            else f"[Radar Switch] {len(offers)} promoção(ões) nova(s) na eShop"))
     plain, rich = format_test_email() if test_email else format_email(offers, max_items, preview=preview)
     msg.set_content(plain)
     msg.add_alternative(rich, subtype="html")
@@ -82,6 +83,13 @@ def ensure_primary_coverage(primary_count: int, primary_parsed: int) -> None:
             f"Cobertura Switch insuficiente ({primary_parsed}/{primary_count}); "
             "histórico preservado"
         )
+
+
+def prioritize_email_offers(offers: list[Offer]) -> list[Offer]:
+    """Primeiro a curadoria Nintendo, depois relevância dos demais jogos."""
+    first_party = [o for o in offers if is_nintendo_priority(o.title)]
+    others = [o for o in offers if not is_nintendo_priority(o.title)]
+    return rank_offers(first_party) + rank_offers(others)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -124,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             for linked in discover_listing_pages(html_listing, source, max_pages):
                 if linked not in visited and linked not in pending:
                     pending.append(linked)
-        if "/bem-avaliados/" not in source:
+        if "/promocoes/switch/" in source or "/jogos-baratos-switch/" in source:
             primary_urls.update(urls)
         LOG.info("Cobertura %s: %d pagina(s) HTML verificadas", source, len(visited))
     LOG.info("Candidatos únicos nas vitrines: %d", len(urls))
@@ -149,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             if qualifies(offer, settings):
                 offers.append(offer)
                 relevance, evidence = popularity_evidence(offer.title, offer.critic, offer.player_positive, offer.player_reviews)
-                LOG.info("Elegível: %s | %s | -%d%% | relevância editorial %d/100 (%s)", offer.title, money_brl(offer.price), offer.discount, relevance, evidence)
+                LOG.info("Elegível%s: %s | %s | -%d%% | relevância editorial %d/100 (%s)", " Nintendo" if is_nintendo_priority(offer.title) else "", offer.title, money_brl(offer.price), offer.discount, relevance, evidence)
             else:
                 LOG.info("Fora dos filtros: %s | %s | -%d%% | Crítica %d | Jogadores %d%% (%d)", offer.title, money_brl(offer.price), offer.discount, offer.critic, offer.player_positive, offer.player_reviews)
         except (requests.RequestException, RuntimeError, ValueError) as exc:
@@ -171,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.preview_email:
         # Escolhe primeiro as ofertas mais relevantes; o template preserva a
         # apresentação visual e ordena por desconto dentro dessa seleção.
-        selected = rank_offers(offers)[:int(settings["max_games_per_email"])]
+        selected = prioritize_email_offers(offers)[:int(settings["max_games_per_email"])]
         email_alert(selected, int(settings["max_games_per_email"]), preview=True)
         LOG.info("Prévia de ofertas enviada, histórico não alterado")
         return 0
@@ -183,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         print("DRY RUN: nenhum e-mail enviado; estado não modificado")
         return 0
     if alerts:
-        selected = rank_offers(alerts)[:int(settings["max_games_per_email"])]
+        selected = prioritize_email_offers(alerts)[:int(settings["max_games_per_email"])]
         email_alert(selected, int(settings["max_games_per_email"]))
         LOG.info("E-mail aceito pelo SMTP")
     # Só atualiza depois do SMTP concluir, permitindo tentativa posterior se falhar.
