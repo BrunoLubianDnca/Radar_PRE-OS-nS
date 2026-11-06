@@ -378,7 +378,7 @@ def test_official_nintendo_html_sale_requires_same_product_prices_and_switch():
     assert not is_official_product_url("https://fake.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/")
     assert parse_official_sales(sample.replace("Nintendo Switch</div>", "Nintendo Switch 2</div>")) == []
     assert parse_official_sales(sample.replace("R$ 199,90", "R$ 339,90")) == []
-    assert parse_official_sales(sample.replace("www.nintendo.com", "malicious.example")) == result
+    assert parse_official_sales(sample.replace('href="/pt-br/store/products/', 'href="https://malicious.example/pt-br/store/products/')) == []
 
 
 def test_official_nintendo_sale_never_invents_critic_score():
