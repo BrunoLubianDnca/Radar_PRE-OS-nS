@@ -534,3 +534,21 @@ def test_nintendo_catalog_failure_never_fabricates_price():
         fetch_catalog(FailedSession(), ("Metroid Dread",))
     with pytest.raises(ValueError):
         parse_regional_prices({"country": "BR", "prices": "not-list"}, {})
+
+
+
+def test_watch_report_differentiates_catalog_match_and_actual_sale():
+    from radar.nintendo_watch import (
+        create_watch_report, register_catalog_match, register_result, watch_counts,
+    )
+    from radar.main import write_watch_summary
+    report = create_watch_report()
+    title = "Super Mario Bros. Wonder"
+    official = "https://www.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/"
+    register_catalog_match(report, title, official)
+    assert watch_counts(report)["encontrados"] == 1
+    assert watch_counts(report)["elegiveis"] == 0
+    assert "desconto não confirmado" in write_watch_summary(report)
+    register_result(report, title, official, parsed=True, eligible=True)
+    assert watch_counts(report)["elegiveis"] == 1
+    assert "oferta elegível" in write_watch_summary(report)
