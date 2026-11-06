@@ -552,3 +552,19 @@ def test_watch_report_differentiates_catalog_match_and_actual_sale():
     register_result(report, title, official, parsed=True, eligible=True)
     assert watch_counts(report)["elegiveis"] == 1
     assert "oferta elegível" in write_watch_summary(report)
+
+
+
+def test_catalog_accepts_nintendo_sourced_unlocalized_store_path_only():
+    from radar.nintendo_catalog import parse_catalog_results
+    payload = {"results": [{"hits": [{
+        "title": "Donkey Kong Country: Tropical Freeze",
+        "nsuid": "70010000012345",
+        "url": "/store/products/donkey-kong-country-tropical-freeze-switch/",
+    }]}]}
+    entries, ambiguous = parse_catalog_results(payload)
+    assert ambiguous == 0
+    assert entries["Donkey Kong Country: Tropical Freeze"].shop_url == (
+        "https://www.nintendo.com/pt-br/store/products/"
+        "donkey-kong-country-tropical-freeze-switch/"
+    )
