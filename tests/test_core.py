@@ -310,3 +310,27 @@ def test_no_link_outside_eshop_offer_or_across_other_platforms():
         "<div>PC digital</div>",
         '<div>PC digital</div>' + original_link)
     assert parse_detail(misplaced, URL) is None
+
+
+def test_email_keeps_nintendo_priority_in_visual_order():
+    from radar.main import prioritize_email_offers
+    from radar.email_template import format_email
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    mario = Offer(**{**base.__dict__, "title": "Super Mario Bros. Wonder",
+                     "discount": 20, "price": Decimal("199.90")})
+    ordinary = Offer(**{**base.__dict__, "title": "Terraria",
+                        "discount": 80, "price": Decimal("22.49")})
+    ordered = prioritize_email_offers([ordinary, mario])
+    assert [x.title for x in ordered] == [mario.title, ordinary.title]
+    plain, html = format_email(ordered, 12)
+    assert html.index(mario.title) < html.index(ordinary.title)
+    assert plain.index(mario.title) < plain.index(ordinary.title)
+
+
+def test_critical_and_optional_sources_are_distinct():
+    from radar.main import is_optional_source
+    assert is_optional_source("https://valeojogo.com.br/promocoes/nintendo/")
+    assert is_optional_source("https://valeojogo.com.br/promocoes/bem-avaliados/")
+    assert not is_optional_source("https://valeojogo.com.br/promocoes/switch/")
+    assert not is_optional_source("https://valeojogo.com.br/promocoes/jogos-baratos-switch/")
