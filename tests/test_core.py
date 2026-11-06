@@ -420,3 +420,117 @@ def test_official_sale_rejects_mixed_card_prices():
     found = parse_official_sales(sample)
     assert len(found) == 1
     assert found[0].watched_title == "Metroid Dread"
+
+
+
+def test_nintendo_catalog_matches_each_game_exactly_with_official_link():
+    from radar.nintendo_catalog import parse_catalog_results
+    data = {"results": [{"hits": [
+        {"title": "Super Mario Bros. Wonder",
+         "nsuid": "70010000068688",
+         "url": "/pt-br/store/products/super-mario-bros-wonder-switch/"},
+        {"title": "Super Mario Bros. Wonder Nintendo Switch 2 Edition",
+         "nsuid": "70010000068689",
+         "url": "/pt-br/store/products/super-mario-bros-wonder-switch/"},
+        {"title": "Metroid Dread", "nsuid": "70010000012345",
+         "url": "https://untrusted.example/pt-br/store/products/metroid-dread-switch/"},
+    ]}]}
+    found, ambiguous = parse_catalog_results(data)
+    assert ambiguous == 0
+    assert list(found) == ["Super Mario Bros. Wonder"]
+    assert found["Super Mario Bros. Wonder"].nsuid == "70010000068688"
+    assert found["Super Mario Bros. Wonder"].shop_url.startswith("https://www.nintendo.com/")
+    assert parse_catalog_results({"results": [{"hits": []}]}) == ({}, 0)
+    with pytest.raises(ValueError):
+        parse_catalog_results({"results": "invalid"})
+
+
+def test_nintendo_catalog_rejects_conflicting_nsuids():
+    from radar.nintendo_catalog import parse_catalog_results
+    data = {"results": [{"hits": [
+        {"title": "Mario Kart 8 Deluxe", "nsuid": "70010000011111",
+         "url": "/pt-br/store/products/mario-kart-8-deluxe-switch/"},
+        {"title": "Mario Kart 8 Deluxe", "nsuid": "70010000022222",
+         "url": "/pt-br/store/products/mario-kart-8-deluxe-switch/"},
+    ]}]}
+    found, ambiguous = parse_catalog_results(data)
+    assert not found
+    assert ambiguous == 1
+
+
+def test_nintendo_prices_eshop_brl_discount_freshness():
+    from radar.nintendo_catalog import CatalogProduct, parse_regional_prices
+    from datetime import timezone
+    product = CatalogProduct(
+        "Metroid Dread", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/metroid-dread-switch/"
+    )
+    values = {"Metroid Dread": product}
+    row = {
+        "title_id": 70010000012345,
+        "regular_price": {"amount": "329.90", "currency": "BRL"},
+        "discount_price": {"amount": "199.90", "currency": "BRL",
+                           "start_datetime": "2026-11-01T00:00:00Z",
+                           "end_datetime": "2026-11-15T23:59:59Z"},
+    }
+    now = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    matches = parse_regional_prices({"country": "BR", "prices": [row]}, values, now)
+    assert len(matches) == 1 and matches[0].discount == 39
+    assert matches[0].current == Decimal("199.90")
+    assert parse_regional_prices({"country": "BR", "prices": [row]}, values,
+                                 datetime(2026, 11, 16, tzinfo=timezone.utc)) == []
+    assert parse_regional_prices({"country": "BR", "prices": [{
+        **row, "discount_price": {"amount": "199.90", "currency": "USD"}}]},
+        values, now) == []
+    assert parse_regional_prices({"country": "BR", "prices": [{
+        **row, "discount_price": None}]}, values, now) == []
+    with pytest.raises(ValueError):
+        parse_regional_prices({"country": "US", "prices": [row]}, values, now)
+
+
+def test_nintendo_catalog_calls_are_batched_and_region_is_br():
+    from radar.nintendo_catalog import fetch_catalog, fetch_regional_prices, CatalogProduct
+    class MockResponse:
+        def __init__(self, url, payload):
+            self.url = url
+            self.payload = payload
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return self.payload
+    class MockSession:
+        def __init__(self):
+            self.posts = []
+            self.gets = []
+        def post(self, url, **kw):
+            self.posts.append((url, kw))
+            return MockResponse(url, {"results": [{"hits": []} for _ in range(3)]})
+        def get(self, url, **kw):
+            self.gets.append((url, kw))
+            return MockResponse(url + "?country=BR", {"country": "BR", "prices": []})
+    session = MockSession()
+    products, ambiguous = fetch_catalog(
+        session, ("Super Mario Bros. Wonder", "Metroid Dread", "Mario Kart 8 Deluxe"))
+    assert products == {} and ambiguous == 0
+    assert len(session.posts) == 1
+    assert len(session.posts[0][1]["json"]["requests"]) == 3
+    assert all(r["indexName"] == "ncom_game_pt_br"
+               for r in session.posts[0][1]["json"]["requests"])
+    chosen = {"Metroid Dread": CatalogProduct(
+        "Metroid Dread", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/metroid-dread-switch/")}
+    assert fetch_regional_prices(session, chosen) == []
+    assert session.gets[0][1]["params"]["country"] == "BR"
+    assert session.gets[0][1]["params"]["ids"] == "70010000012345"
+
+
+def test_nintendo_catalog_failure_never_fabricates_price():
+    from radar.nintendo_catalog import fetch_catalog, parse_regional_prices
+    import requests
+    class FailedSession:
+        def post(self, *args, **kwargs):
+            raise requests.ConnectionError("catalog unavailable")
+    with pytest.raises(requests.ConnectionError):
+        fetch_catalog(FailedSession(), ("Metroid Dread",))
+    with pytest.raises(ValueError):
+        parse_regional_prices({"country": "BR", "prices": "not-list"}, {})
