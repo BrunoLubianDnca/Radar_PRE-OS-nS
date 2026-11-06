@@ -17,6 +17,7 @@ from .nintendo_watch import WATCHED_GAMES, matched_watch_game
 from .official_sales import is_official_product_url
 
 ALGOLIA_URL = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries"
+ALGOLIA_INDEX = "store_all_products_pt_br"
 ALGOLIA_APP = "U3B6GR4UA3"
 # Chave pública de pesquisa (não credencial de usuário).
 ALGOLIA_SEARCH_KEY = "a29c6927638bfd8cee23993e51e721c9"
@@ -42,10 +43,10 @@ class VerifiedPrice:
 def _title_and_id(hit: dict) -> tuple[str, str]:
     title = next((hit[key] for key in
                   ("title", "name", "product_name", "productName", "title_name",
-                   "titleName")
+                   "titleName", "displayName")
                   if isinstance(hit.get(key), str) and hit[key].strip()), "")
     raw_id = next((hit[key] for key in
-                   ("nsuid", "nsuid_br", "nsuidBR", "title_id", "titleId")
+                   ("nsuid", "nsuid_br", "nsuidBR", "title_id", "titleId", "nsuidUS")
                    if isinstance(hit.get(key), (str, int))), "")
     if not raw_id and isinstance(hit.get("nsuids"), list):
         for item in hit["nsuids"]:
@@ -57,7 +58,7 @@ def _title_and_id(hit: dict) -> tuple[str, str]:
 
 def _product_url(hit: dict) -> str:
     for field in ("url", "product_url", "productUrl", "product_page_url",
-                  "productPageUrl", "canonical_url"):
+                  "productPageUrl", "canonical_url", "productUrlPath"):
         raw = hit.get(field)
         if not isinstance(raw, str):
             continue
@@ -112,7 +113,7 @@ def fetch_catalog(session: requests.Session,
                   watched: tuple[str, ...] = WATCHED_GAMES
                   ) -> tuple[dict[str, CatalogProduct], int]:
     """Uma busca multiquery para os títulos monitorados, não uma página limitada."""
-    queries = [{"indexName": "ncom_game_pt_br",
+    queries = [{"indexName": ALGOLIA_INDEX,
                 "params": "query=" + requests.utils.quote(name, safe="") + "&hitsPerPage=8"}
                for name in watched]
     response = session.post(
@@ -128,10 +129,23 @@ def fetch_catalog(session: requests.Session,
     return parse_catalog_results(response.json(), watched)
 
 
+def catalog_diagnostics(payload: dict) -> dict:
+    """Campos presentes nos primeiros resultados, sem registrar dados pessoais."""
+    blocks = payload.get("results") if isinstance(payload, dict) else None
+    hits = [hit for block in (blocks or [])
+            if isinstance(block, dict)
+            for hit in block.get("hits", [])
+            if isinstance(hit, dict)]
+    keys = sorted({k for hit in hits[:5] for k in hit.keys()})
+    return {"hits": len(hits), "fields": keys[:40]}
+
+
 def _brl_amount(raw: object) -> Decimal | None:
     if not isinstance(raw, dict) or raw.get("currency") != "BRL":
         return None
-    value = raw.get("amount")
+    value = raw.get("amount", raw.get("raw_value"))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = str(value)
     if not isinstance(value, str) or not re.fullmatch(r"\d+(?:\.\d{1,2})?", value):
         return None
     try:
@@ -164,7 +178,9 @@ def _sale_is_current(raw: dict, now: datetime) -> bool:
 def parse_regional_prices(payload: dict, products: dict[str, CatalogProduct],
                           now: datetime | None = None) -> list[VerifiedPrice]:
     """Exige country=BR, currency=BRL e desconto ativo para ID cadastrado."""
-    if not isinstance(payload, dict) or payload.get("country") != "BR":
+    if not isinstance(payload, dict) or (
+        payload.get("country") not in (None, "BR")
+    ):
         raise ValueError("Preço de outra região ou resposta inválida")
     prices = payload.get("prices")
     if not isinstance(prices, list):
