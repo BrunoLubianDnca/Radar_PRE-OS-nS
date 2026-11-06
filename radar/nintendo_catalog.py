@@ -390,6 +390,104 @@ def parse_regional_prices(payload: dict, products: dict[str, CatalogProduct],
     return verified
 
 
+GUEST_PRICES_URL = "https://ec.nintendo.com/api/BR/pt/guest_prices"
+
+
+def parse_guest_prices(payload: object, products: dict[str, CatalogProduct],
+                       now: datetime | None = None) -> list[VerifiedPrice]:
+    """Resposta real da rota BR: lista de objetos com id e price.*.
+
+    Aceitar apenas BRL e desconto válido; status on sale pode existir sem
+    desconto, portanto não prova promoção.
+    """
+    if not isinstance(payload, list):
+        raise ValueError("guest_prices não retornou uma lista")
+    catalog = {item.nsuid: item for item in products.values()}
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    seen: set[str] = set()
+    verified = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        nsuid = str(item.get("id", ""))
+        if nsuid not in catalog or nsuid in seen:
+            continue
+        seen.add(nsuid)
+        prices = item.get("price")
+        if not isinstance(prices, dict):
+            continue
+        regular = _brl_amount(prices.get("regular_price"))
+        promotion = prices.get("discount_price")
+        discounted = _brl_amount(promotion)
+        if (regular is None or discounted is None or
+                not Decimal("0") < discounted < regular):
+            continue
+        if not _sale_is_current(promotion, now):
+            continue
+        percent = int(((regular - discounted) / regular * 100).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP))
+        if 1 <= percent <= 99:
+            verified.append(VerifiedPrice(catalog[nsuid], discounted, regular, percent))
+    return verified
+
+
+def fetch_guest_prices(session: requests.Session,
+                       products: dict[str, CatalogProduct],
+                       diagnostics: dict | None = None) -> list[VerifiedPrice]:
+    """Consulta lotes BR de até 99 NSUIDs; falha do lote tenta unidades."""
+    if not products:
+        return []
+    values = list(products.values())
+    result: dict[str, VerifiedPrice] = {}
+    stats = {"batches": 0, "items": 0, "prices": 0,
+             "batch_failures": 0, "individual_failures": 0}
+    for offset in range(0, len(values), 99):
+        batch = values[offset:offset + 99]
+        ids = [p.nsuid for p in batch]
+
+        def request_group(group: list[str]) -> object:
+            # Lista de tuplas produz query "ns_uids=...&ns_uids=..." sem
+            # misturar a região BR com outra localização.
+            response = session.get(
+                GUEST_PRICES_URL, params=[("ns_uids", value) for value in group],
+                headers={"User-Agent": "RadarSwitchMVP/1.0"},
+                timeout=(10, 25), allow_redirects=False)
+            response.raise_for_status()
+            target = urlparse(response.url)
+            if target.scheme != "https" or target.hostname != "ec.nintendo.com":
+                raise ValueError("Destino inesperado para guest_prices")
+            return response.json()
+
+        stats["batches"] += 1
+        try:
+            payload = request_group(ids)
+            if not isinstance(payload, list):
+                raise ValueError("Formato não-lista retornado pelo lote")
+            subset = {p.title: p for p in batch}
+            offers = parse_guest_prices(payload, subset)
+            stats["items"] += len(payload)
+            for offer in offers:
+                result[offer.product.nsuid] = offer
+        except (requests.RequestException, ValueError, TypeError):
+            stats["batch_failures"] += 1
+            for product in batch:
+                try:
+                    data = request_group([product.nsuid])
+                    if not isinstance(data, list):
+                        raise ValueError("Resposta individual inválida")
+                    stats["items"] += len(data)
+                    for offer in parse_guest_prices(data, {product.title: product}):
+                        result[offer.product.nsuid] = offer
+                except (requests.RequestException, ValueError, TypeError):
+                    stats["individual_failures"] += 1
+    stats["prices"] = len(result)
+    if diagnostics is not None:
+        diagnostics.update(stats)
+    if stats["batch_failures"] and not stats["items"]:
+        raise RuntimeError("Nenhuma resposta de preços válida em guest_prices BR")
+    return list(result.values())
+
+
 def fetch_regional_prices(session: requests.Session,
                           products: dict[str, CatalogProduct],
                           diagnostics: dict | None = None) -> list[VerifiedPrice]:
