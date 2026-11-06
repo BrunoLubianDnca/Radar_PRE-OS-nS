@@ -74,3 +74,31 @@ Fontes técnicas:
 ## Fonte oficial prioritária
 
 Em todas as execuções de coleta (inclusive prévia), o Radar consulta **primeiro** https://www.nintendo.com/pt-br/store/sales-and-deals/. O HTML é consultado uma única vez por ciclo e, se tiver cartões completos com preço e link oficial, essas ofertas são aproveitadas. O catálogo regional e a API de preços Nintendo BR complementam a identificação e a confirmação dos preços. Vitrines de terceiros são fontes auxiliares, não substituem preço verificável da eShop. Se a página oficial não apresentar os dados no HTML (carregamento JS), o log informa isso e os alertas comuns permanecem ativos; consultar a página não garante descoberta de todos os jogos. A execução de teste SMTP --test-email não consulta jogos por definição.
+
+## Correção da fonte oficial — novembro de 2026
+
+Log investigado: página oficial sales-and-deals retornava HTML com cerca
+de 1,39 milhão de caracteres, porém parser gerava zero ofertas; o índice
+ncom_game_pt_br também retornava zero jogos monitorados.
+
+Correções:
+- Buscar a seleção Deals no índice store_all_products_pt_br, de catálogo
+  atual da Nintendo Brasil (fonte de apoio à página sales-and-deals).
+- Consultar até três páginas de resultados para descoberta de produtos
+  digitais conhecidos do Switch 1, além dos 31 títulos acompanhados.
+- Confirmar o desconto pela API api.ec.nintendo.com/v1/price com
+  country=BR, valor em BRL, NSUID, preço cheio e promoção vigente.
+- Aceitar raw_value além de amount e não exigir campo country na resposta
+  quando a requisição foi explicitamente feita para BR; país divergente
+  continua sendo rejeitado.
+- Aceitar jogos populares de terceiros com preço oficial validado, mas
+  sem inventar notas de crítica.
+- Mostrar no log quantos itens da seleção Deals chegaram, seus campos
+  disponíveis quando houver zero correspondências e quantos descontos
+  brasileiros foram efetivamente confirmados.
+- O modo automático só envia alertas inéditos/queda de preço;
+  preview_email=true permite ver a seleção atual sem mudar histórico.
+
+A confirmação de que esses endpoints e campos continuam respondendo
+no ambiente do GitHub requer execução externa. Testes locais simulados
+não comprovam a extração ao vivo.
