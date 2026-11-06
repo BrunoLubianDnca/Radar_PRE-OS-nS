@@ -236,3 +236,77 @@ def test_general_multiplatform_source_does_not_reduce_switch_coverage():
     with pytest.raises(RuntimeError, match="Cobertura Switch insuficiente"):
         ensure_primary_coverage(36, 4)
     assert ensure_primary_coverage(9, 1) is None
+
+
+def test_nintendo_priority_curated_and_partner_excluded():
+    from radar.nintendo import is_nintendo_priority
+    for title in (
+        "Super Mario Bros. Wonder", "Mario Kart 8 Deluxe",
+        "Donkey Kong Country: Tropical Freeze",
+        "The Legend of Zelda: Tears of the Kingdom",
+        "Kirby and the Forgotten Land", "Metroid Dread",
+        "Animal Crossing: New Horizons", "Luigi's Mansion 3",
+        "Pokémon Legends: Arceus", "Pikmin 4",
+    ):
+        assert is_nintendo_priority(title), title
+    for title in (
+        "Mario + Rabbids Sparks of Hope",
+        "Mario & Sonic at the Olympic Games",
+        "Pokémon UNITE",
+        "The Legend of Zelda: Breath of the Wild Nintendo Switch 2 Edition",
+        "The Messenger", "Risk of Rain 2",
+    ):
+        assert not is_nintendo_priority(title), title
+
+
+def test_nintendo_own_price_and_discount_rules_do_not_change_normal_games():
+    from radar.nintendo import is_nintendo_priority
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    cfg = dict(SETTINGS, popular_only=True, max_discount_percent=90,
+               nintendo_priority_enabled=True,
+               nintendo_max_price_brl=250, nintendo_min_discount_percent=15)
+    mario = Offer(**{**base.__dict__, "title": "Super Mario Bros. Wonder",
+                    "price": Decimal("199.90"), "old_price": Decimal("249.90"),
+                    "discount": 20})
+    assert is_nintendo_priority(mario.title)
+    assert qualifies(mario, cfg)
+    assert not qualifies(mario, dict(cfg, nintendo_priority_enabled=False))
+    assert not qualifies(Offer(**{**mario.__dict__, "price": Decimal("250.01")}), cfg)
+    assert not qualifies(Offer(**{**mario.__dict__, "discount": 14}), cfg)
+    # Mario + Rabbids é uma série associada, não ganha os limites especiais.
+    rabbids = Offer(**{**mario.__dict__, "title": "Mario + Rabbids Sparks of Hope"})
+    assert not qualifies(rabbids, cfg)
+    # Terceiros seguem 30% e teto de 100 reais.
+    third_party = Offer(**{**mario.__dict__, "title": "Terraria"})
+    assert not qualifies(third_party, cfg)
+
+
+def test_nintendo_first_in_email_and_presentation():
+    from radar.main import prioritize_email_offers
+    from radar.email_template import format_email
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    mario = Offer(**{**base.__dict__, "title": "Super Mario Bros. Wonder",
+                     "discount": 20, "price": Decimal("199.90")})
+    terraria = Offer(**{**base.__dict__, "title": "Terraria", "discount": 80})
+    assert prioritize_email_offers([terraria, mario])[0].title == mario.title
+    plain, rich = format_email([mario], 10)
+    assert "NINTENDO EM DESTAQUE" in rich
+    assert "Super Mario Bros. Wonder" in plain
+    assert "Ver oferta na eShop" in rich
+    assert "NINTENDO EM DESTAQUE" not in format_email([terraria], 10)[1]
+
+
+def test_no_link_outside_eshop_offer_or_across_other_platforms():
+    # Um preço Nintendo seguido de uma seção de PC sem seu CTA não é
+    # suficiente para vincular o preço a outro botão eShop da página.
+    original_link = ('<a href="https://www.nintendo.com/pt-br/store/products/example/">'
+                     'Ver na eShop</a>')
+    assert original_link in DETAIL
+    without_cta = DETAIL.replace(original_link, "")
+    assert parse_detail(without_cta, URL) is None
+    misplaced = without_cta.replace(
+        "<div>PC digital</div>",
+        '<div>PC digital</div>' + original_link)
+    assert parse_detail(misplaced, URL) is None
