@@ -745,3 +745,41 @@ def test_nintendo_brl_price_accepts_official_raw_value_without_country_field():
         parse_regional_prices({**payload, "country": "US"},
                               {"Mario Kart 8 Deluxe": game},
                               datetime(2026, 11, 6, tzinfo=timezone.utc))
+
+
+
+def test_official_deals_include_known_third_party_without_fake_reviews():
+    from radar.nintendo_catalog import parse_store_deal_hits
+    from radar.core import qualifies
+    data = {"results": [{"hits": [
+        {"title": "FINAL FANTASY XII THE ZODIAC AGE",
+         "nsuid": "70010000012345",
+         "url": "/store/products/final-fantasy-xii-the-zodiac-age-switch/",
+         "platform": "Nintendo Switch"},
+        {"title": "Metroid Dread",
+         "nsuid": "70010000012346",
+         "url": "/store/products/metroid-dread-switch/",
+         "platform": "Nintendo Switch"},
+        {"title": "Metroid Dread Nintendo Switch 2 Edition",
+         "nsuid": "70010000012347",
+         "url": "/store/products/metroid-dread-switch/",
+         "platform": "Nintendo Switch 2"}
+    ]}]}
+    products = parse_store_deal_hits(data)
+    assert "FINAL FANTASY XII THE ZODIAC AGE" in products
+    assert "Metroid Dread" in products
+    assert len(products) == 2
+    game = products["FINAL FANTASY XII THE ZODIAC AGE"]
+    base = parse_detail(DETAIL, URL)
+    assert base is not None
+    official = Offer(**{**base.__dict__, "title": game.title,
+                         "shop_url": game.shop_url, "page_url": game.shop_url,
+                         "price": Decimal("68.97"),
+                         "old_price": Decimal("229.90"),
+                         "discount": 70,
+                         "critic": 0, "player_positive": 0,
+                         "player_reviews": 0})
+    cfg = dict(SETTINGS, popular_only=True, nintendo_priority_enabled=True)
+    assert qualifies(official, cfg)
+    assert not qualifies(Offer(**{**official.__dict__,
+                         "page_url": "https://valeojogo.com.br/jogo/test/"}), cfg)
