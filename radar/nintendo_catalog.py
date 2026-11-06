@@ -140,6 +140,42 @@ def catalog_diagnostics(payload: dict) -> dict:
     return {"hits": len(hits), "fields": keys[:40]}
 
 
+def fetch_store_deals(session: requests.Session, pages: int = 2) -> tuple[dict[str, CatalogProduct], dict]:
+    """Lê a seleção Deals da mesma base usada pela página oficial de ofertas.
+
+    Usa os resultados para DESCOBRIR jogos; preços e promoções são
+    confirmados posteriormente na API de preços BR por NSUID.
+    """
+    found: dict[str, CatalogProduct] = {}
+    stats = {"hits": 0, "matches": 0, "fields": [], "pages": 0}
+    for page in range(max(1, min(pages, 3))):
+        response = session.post(
+            ALGOLIA_URL,
+            json={"requests": [{"indexName": ALGOLIA_INDEX, "params":
+                 "query=&hitsPerPage=80&page=" + str(page) +
+                 "&filters=" + requests.utils.quote('topLevelFilters:"Deals"', safe="")}]},
+            headers={"x-algolia-application-id": ALGOLIA_APP,
+                     "x-algolia-api-key": ALGOLIA_SEARCH_KEY,
+                     "User-Agent": "RadarSwitchMVP/1.0",
+                     "Origin": "https://www.nintendo.com"},
+            timeout=(10, 25), allow_redirects=False,
+        )
+        response.raise_for_status()
+        if response.url.rstrip("/") != ALGOLIA_URL.rstrip("/"):
+            raise ValueError("Destino inesperado na consulta Deals Nintendo")
+        payload = response.json()
+        current = catalog_diagnostics(payload)
+        stats["hits"] += current["hits"]
+        stats["fields"] = current["fields"] or stats["fields"]
+        stats["pages"] += 1
+        current_matches, _ = parse_catalog_results(payload)
+        found.update(current_matches)
+        if current["hits"] < 80:
+            break
+    stats["matches"] = len(found)
+    return found, stats
+
+
 def _brl_amount(raw: object) -> Decimal | None:
     if not isinstance(raw, dict) or raw.get("currency") != "BRL":
         return None
