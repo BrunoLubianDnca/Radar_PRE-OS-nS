@@ -41,3 +41,32 @@ O Radar continua alertando **somente jogos digitais para Nintendo Switch pela Ni
   dos itens efetivamente publicados na página oficial de ofertas.
 - Ausência de oferta Nintendo não desativa as ofertas comuns e não
   muda o histórico por si só.
+
+## Busca nominal com preços regionais Nintendo BR
+
+O Radar agora faz consulta individual aos 31 jogos monitorados através de
+uma única busca multiquery no catálogo Nintendo Brasil (Algolia
+ncom_game_pt_br). A busca não fica limitada aos 28 jogos de uma vitrine.
+
+Para cada resultado com nome exato, NSUID de 14 dígitos e URL de produto
+oficial da Nintendo (edição Nintendo Switch), uma chamada à API pública
+api.ec.nintendo.com/v1/price consulta country=BR. Só produz alerta quando:
+- o ID corresponde exatamente ao título acompanhado e há URL do produto;
+- a resposta da Nintendo indica country BR e valores em moeda BRL;
+- existe discount_price menor que regular_price;
+- as datas de vigência, quando informadas, abrangem o momento da consulta;
+- as regras especiais Nintendo (até R$250, a partir de 15%) são satisfeitas.
+
+Nenhuma edição Switch 2 Edition ou preço de outra região é usado.
+Um campo de crítica ausente na API oficial não é substituído por nota falsa.
+
+Ambas as APIs públicas são não documentadas e podem alterar formato, chave
+de busca ou disponibilidade. Falha não cria oferta falsa nem impede os
+alertas comuns; o job mostrará quantos títulos e preços foram resolvidos.
+Esta integração ainda precisa de confirmação da primeira execução
+externa no GitHub Actions para validar a estrutura de resposta ao vivo.
+
+Fontes técnicas:
+- https://github.com/okou-ai/okou/issues/20611
+- https://opentherank.com/pt/data-sources/
+- https://favna.github.io/nintendo-switch-eshop/api/interfaces/gameus/
