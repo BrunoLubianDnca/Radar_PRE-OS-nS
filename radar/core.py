@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 from .popular import is_popular
+from .nintendo import is_nintendo_priority
 
 BR = ZoneInfo("America/Sao_Paulo")
 MONEY = r"R\$\s*([\d.]+,\d{2})"
@@ -256,12 +257,16 @@ def qualifies(o: Offer, settings: dict) -> bool:
     Avaliação de jogadores não é obrigatória quando a fonte não fornece
     amostra suficiente. Se houver amostra robusta, ela deve ser positiva.
     """
-    if not (Decimal("0") < o.price <= Decimal(str(settings["max_price_brl"]))):
+    nintendo = settings.get("nintendo_priority_enabled", False) and is_nintendo_priority(o.title)
+    max_price = (settings.get("nintendo_max_price_brl", 250) if nintendo
+                 else settings["max_price_brl"])
+    min_discount = (settings.get("nintendo_min_discount_percent", 15) if nintendo
+                    else settings["min_discount_percent"])
+    if not (Decimal("0") < o.price <= Decimal(str(max_price))):
         return False
-    if not (settings["min_discount_percent"] <= o.discount
-            <= settings.get("max_discount_percent", 100)):
+    if not (min_discount <= o.discount <= settings.get("max_discount_percent", 100)):
         return False
-    if settings.get("popular_only", False) and not is_popular(o.title):
+    if settings.get("popular_only", False) and not (nintendo or is_popular(o.title)):
         return False
     if o.critic < settings["min_critic_score"]:
         return False
