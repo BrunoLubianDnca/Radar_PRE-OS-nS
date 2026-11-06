@@ -170,6 +170,16 @@ def main(argv: list[str] | None = None) -> int:
     state_file = ROOT / "data/state.json"
     state = json.loads(state_file.read_text(encoding="utf-8"))
     session = requests.Session()
+    # A página oficial é sempre a PRIMEIRA fonte consultada, inclusive em
+    # prévias. O HTML é reutilizado abaixo sem uma segunda requisição.
+    official_html = None
+    try:
+        LOG.info("Fonte oficial prioritária: https://www.nintendo.com/pt-br/store/sales-and-deals/")
+        official_html = fetch_nintendo_sales(session)
+        LOG.info("Página oficial Nintendo consultada com sucesso (%d caracteres)",
+                 len(official_html))
+    except (requests.RequestException, RuntimeError, ValueError) as exc:
+        LOG.warning("Página oficial Nintendo indisponível: %s. Fontes alternativas preservadas.", exc)
     sources = settings.get("source_urls") or [settings["source_url"]]
     urls = []
     max_pages = max(1, min(int(settings.get("max_listing_pages", 1)), 5))
@@ -256,8 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     # cartões com título, versão Switch e dois preços dentro do mesmo bloco.
     # Se o site entregar apenas o shell JS, fica sem resultados e sem inventar.
     try:
-        official_html = fetch_nintendo_sales(session)
-        official_sales = parse_official_sales(official_html)
+        official_sales = parse_official_sales(official_html) if official_html else []
         LOG.info("Ofertas oficiais Nintendo verificadas em HTML: %d", len(official_sales))
         for sale in official_sales:
             offer = Offer(
