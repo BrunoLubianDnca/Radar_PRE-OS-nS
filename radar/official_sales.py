@@ -69,8 +69,8 @@ def parse_official_sales(html: str) -> list[OfficialSale]:
             continue
         links = [a for a in card.select("a[href]")
                  if "/store/products/" in a.get("href", "")]
-        if len(links) > 2:
-            continue  # bloco grande poderia misturar preços entre jogos
+        if len(links) != 1:
+            continue  # bloquear contêiner com ofertas de vários jogos
         headings = card.select("h2,h3,h4")
         names = [anchor.get_text(" ", strip=True)]
         names += [h.get_text(" ", strip=True) for h in headings]
