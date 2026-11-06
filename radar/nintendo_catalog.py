@@ -118,7 +118,7 @@ def fetch_catalog(session: requests.Session,
         timeout=(10, 25), allow_redirects=False,
     )
     response.raise_for_status()
-    if response.url != ALGOLIA_URL:
+    if response.url.rstrip("/") != ALGOLIA_URL.rstrip("/"):
         raise ValueError("Redirecionamento inesperado no catálogo")
     return parse_catalog_results(response.json(), watched)
 
@@ -200,6 +200,7 @@ def fetch_regional_prices(session: requests.Session,
                            headers={"User-Agent": "RadarSwitchMVP/1.0"},
                            timeout=(10, 25), allow_redirects=False)
     response.raise_for_status()
-    if urlparse(response.url).hostname != "api.ec.nintendo.com":
+    parts = urlparse(response.url)
+    if parts.scheme != "https" or parts.hostname != "api.ec.nintendo.com":
         raise ValueError("Redirecionamento inesperado na API Nintendo")
     return parse_regional_prices(response.json(), products)
