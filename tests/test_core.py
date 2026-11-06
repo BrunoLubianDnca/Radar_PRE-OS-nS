@@ -334,3 +334,89 @@ def test_critical_and_optional_sources_are_distinct():
     assert is_optional_source("https://valeojogo.com.br/promocoes/bem-avaliados/")
     assert not is_optional_source("https://valeojogo.com.br/promocoes/switch/")
     assert not is_optional_source("https://valeojogo.com.br/promocoes/jogos-baratos-switch/")
+
+
+def test_nintendo_watchlist_diagnostics_no_guessed_links():
+    from radar.nintendo_watch import (
+        WATCHED_GAMES, matched_watch_game, create_watch_report,
+        register_candidate, register_result, watch_counts,
+    )
+    from radar.main import write_watch_summary
+    assert len(WATCHED_GAMES) >= 25
+    assert matched_watch_game("Super Mario Bros.™ Wonder") == "Super Mario Bros. Wonder"
+    assert matched_watch_game("Super Mario Bros. Wonder Nintendo Switch 2 Edition") is None
+    assert matched_watch_game("Mario + Rabbids Sparks of Hope") is None
+    report = create_watch_report()
+    url = "https://valeojogo.com.br/jogo/mario-kart-8-deluxe/"
+    register_candidate(report, "Mario Kart 8 Deluxe", url)
+    register_result(report, "Mario Kart 8 Deluxe", url, parsed=True, eligible=False)
+    counts = watch_counts(report)
+    assert counts["encontrados"] == 1
+    assert counts["elegiveis"] == 0
+    assert counts["nao_encontrados"] == len(WATCHED_GAMES) - 1
+    assert "fora dos critérios" in write_watch_summary(report)
+    assert "não apareceu nas vitrines" in write_watch_summary(report)
+
+
+def test_official_nintendo_html_sale_requires_same_product_prices_and_switch():
+    from radar.official_sales import parse_official_sales, is_official_product_url
+    url = "https://www.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/"
+    sample = """<html><body><article>
+       <a href="/pt-br/store/products/super-mario-bros-wonder-switch/">Super Mario Bros. Wonder</a>
+       <div>Nintendo Switch</div>
+       <span>Preço promocional: R$ 199,90</span>
+       <span>Preço normal: R$ 329,90</span>
+       </article></body></html>"""
+    result = parse_official_sales(sample)
+    assert len(result) == 1
+    assert result[0].watched_title == "Super Mario Bros. Wonder"
+    assert result[0].price == Decimal("199.90")
+    assert result[0].old_price == Decimal("329.90")
+    assert result[0].product_url == url
+    assert result[0].discount == 39
+    assert is_official_product_url(url)
+    assert not is_official_product_url("https://fake.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/")
+    assert parse_official_sales(sample.replace("Nintendo Switch</div>", "Nintendo Switch 2</div>")) == []
+    assert parse_official_sales(sample.replace("R$ 199,90", "R$ 339,90")) == []
+    assert parse_official_sales(sample.replace("www.nintendo.com", "malicious.example")) == result
+
+
+def test_official_nintendo_sale_never_invents_critic_score():
+    from radar.official_sales import parse_official_sales
+    from radar.email_template import format_email
+    sample = """<article><a href="/pt-br/store/products/metroid-dread-switch/">
+    Metroid Dread</a><div>Nintendo Switch</div>
+    <p>Preço promocional: R$ 199,90</p>
+    <p>Preço normal: R$ 329,90</p></article>"""
+    found = parse_official_sales(sample)
+    assert len(found) == 1
+    sale = found[0]
+    offer = Offer(
+        title=sale.watched_title, page_url=sale.product_url,
+        shop_url=sale.product_url, price=sale.price, old_price=sale.old_price,
+        discount=sale.discount, critic=0, player_positive=0, player_reviews=0
+    )
+    config = dict(SETTINGS, popular_only=True, max_discount_percent=90,
+                  nintendo_priority_enabled=True,
+                  nintendo_max_price_brl=250, nintendo_min_discount_percent=15)
+    assert qualifies(offer, config)
+    assert not qualifies(offer, dict(config, nintendo_priority_enabled=False))
+    plain, rich = format_email([offer], 12)
+    assert "Crítica não disponível" in rich
+    assert "Crítica: não disponível" in plain
+    assert "0/100" not in rich
+    assert "Ver oferta na eShop" in rich
+
+
+def test_official_sale_rejects_mixed_card_prices():
+    from radar.official_sales import parse_official_sales
+    sample = """<html><body><div>
+      <article><a href="/pt-br/store/products/mario-kart-8-deluxe-switch/">
+      Mario Kart 8 Deluxe</a><p>Nintendo Switch</p></article>
+      <article><a href="/pt-br/store/products/metroid-dread-switch/">
+      Metroid Dread</a><p>Nintendo Switch</p>
+      <p>Preço promocional: R$ 49,90</p><p>Preço normal: R$ 329,90</p></article>
+    </div></body></html>"""
+    found = parse_official_sales(sample)
+    assert len(found) == 1
+    assert found[0].watched_title == "Metroid Dread"
