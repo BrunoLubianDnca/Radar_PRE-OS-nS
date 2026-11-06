@@ -514,7 +514,7 @@ def test_nintendo_catalog_calls_are_batched_and_region_is_br():
     assert products == {} and ambiguous == 0
     assert len(session.posts) == 1
     assert len(session.posts[0][1]["json"]["requests"]) == 3
-    assert all(r["indexName"] == "ncom_game_pt_br"
+    assert all(r["indexName"] == "store_all_products_pt_br"
                for r in session.posts[0][1]["json"]["requests"])
     chosen = {"Metroid Dread": CatalogProduct(
         "Metroid Dread", "70010000012345",
@@ -681,3 +681,67 @@ def test_official_sales_page_is_consulted_first_even_if_other_source_fails(monke
     assert (tmp_path / "data/state.json").read_text(encoding="utf-8") == (
         '{"initialized": true, "active": {}}'
     )
+
+
+
+def test_official_deals_index_fetches_page_and_uses_brl_confirmation():
+    from radar.nintendo_catalog import fetch_store_deals, CatalogProduct
+    endpoint = "https://u3b6gr4ua3-dsn.algolia.net/1/indexes/*/queries"
+    class Response:
+        url = endpoint
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {"results": [{"hits": [
+                {"title": "Super Mario Bros. Wonder",
+                 "nsuid": "70010000068688",
+                 "url": "/store/products/super-mario-bros-wonder-switch/"},
+                {"title": "Unrelated Indie Game",
+                 "nsuid": "70010000011111",
+                 "url": "/store/products/unrelated-indie-game-switch/"},
+            ]}]}
+    class Session:
+        def __init__(self):
+            self.calls = []
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return Response()
+    session = Session()
+    games, stats = fetch_store_deals(session, pages=3)
+    assert len(session.calls) == 1
+    assert session.calls[0][0] == endpoint
+    params = session.calls[0][1]["json"]["requests"][0]
+    assert params["indexName"] == "store_all_products_pt_br"
+    assert "Deals" in params["params"]
+    assert stats["hits"] == 2
+    assert stats["matches"] == 1
+    assert games["Super Mario Bros. Wonder"] == CatalogProduct(
+        "Super Mario Bros. Wonder", "70010000068688",
+        "https://www.nintendo.com/pt-br/store/products/super-mario-bros-wonder-switch/"
+    )
+
+
+def test_nintendo_brl_price_accepts_official_raw_value_without_country_field():
+    from radar.nintendo_catalog import CatalogProduct, parse_regional_prices
+    from datetime import timezone
+    game = CatalogProduct(
+        "Mario Kart 8 Deluxe", "70010000012345",
+        "https://www.nintendo.com/pt-br/store/products/mario-kart-8-deluxe-switch/"
+    )
+    payload = {"prices": [{
+        "title_id": "70010000012345",
+        "regular_price": {"raw_value": 299.90, "currency": "BRL"},
+        "discount_price": {"raw_value": "149.95", "currency": "BRL",
+                           "end_datetime": "2026-12-01T00:00:00Z"}
+    }]}
+    matches = parse_regional_prices(
+        payload, {"Mario Kart 8 Deluxe": game},
+        datetime(2026, 11, 6, tzinfo=timezone.utc)
+    )
+    assert len(matches) == 1
+    assert matches[0].current == Decimal("149.95")
+    assert matches[0].discount == 50
+    with pytest.raises(ValueError):
+        parse_regional_prices({**payload, "country": "US"},
+                              {"Mario Kart 8 Deluxe": game},
+                              datetime(2026, 11, 6, tzinfo=timezone.utc))
