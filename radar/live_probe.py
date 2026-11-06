@@ -9,6 +9,8 @@ import logging
 import os
 import requests
 
+from .nintendo_watch import WATCHED_GAMES
+
 from .nintendo_catalog import (
     GUEST_PRICES_URL, fetch_catalog, fetch_guest_prices,
     fetch_regional_prices, _brl_amount, PRICE_URL, price_response_diagnostics
@@ -19,15 +21,14 @@ LOG = logging.getLogger("radar.live_probe")
 
 def run() -> int:
     session = requests.Session()
-    samples = ("Super Mario Bros. Wonder", "Mario Kart 8 Deluxe",
-               "Metroid Dread", "The Legend of Zelda: Breath of the Wild")
+    samples = WATCHED_GAMES
     catalog, ambiguous = fetch_catalog(session, samples)
     LOG.info("Catálogo Nintendo BR: resolvidos=%d/%d ambiguos=%d",
              len(catalog), len(samples), ambiguous)
     if not catalog:
         LOG.error("Nenhum jogo resolvido no catálogo Nintendo.")
         return 1
-    products = list(catalog.values())[:4]
+    products = list(catalog.values())
     # A API mais recente é testada independentemente da rota guest_prices,
     # que retornou HTTP 404 na execução de 06/11/2026.
     params = {"country": "BR", "ids": ",".join(p.nsuid for p in products),
@@ -93,8 +94,8 @@ def run() -> int:
             file.write(f"- Preços normais confirmados em BRL: {regular_found}\n")
             file.write(f"- Promoções ativas verificadas: {sale_count}\n")
             file.write("- E-mail e histórico: não alterados\n")
-    if not (regular_found or latest_regular):
-        LOG.error("FALHOU: nenhum preço normal BRL confirmado em qualquer API.")
+    if not latest_regular:
+        LOG.error("FALHOU: nenhum preço normal BRL confirmado na API regional atual.")
         return 1
     LOG.info("APROVADO: integração real BR devolveu preços normais verificáveis.")
     return 0
